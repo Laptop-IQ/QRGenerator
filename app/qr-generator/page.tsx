@@ -11,6 +11,14 @@ import {
   type ReactNode,
 } from "react";
 
+import {
+  readLogo,
+  renderQr,
+  svgToPngBlob,
+  type DotStyle,
+  type RenderResult,
+} from "./qr-render";
+
 const ACCENT = "#00C896";
 const ACCENT_BRIGHT = "#00E0A8";
 
@@ -29,6 +37,34 @@ const COLORS = {
 type QRType = "URL" | "Text" | "Email" | "Phone" | "WiFi";
 type ECCLevel = "L" | "M" | "Q" | "H";
 type DownloadFormat = "png" | "svg";
+
+interface HistoryItem {
+  id: string;
+  createdAt: number;
+  type: QRType;
+  fields: QRFields;
+  fg: string;
+  bg: string;
+  ecc: ECCLevel;
+  size: number;
+  dotStyle: DotStyle;
+  title: string;
+  titleScale: number;
+  logo: string | null;
+  logoScale: number;
+  logoPlate: boolean;
+}
+
+const HISTORY_KEY = "qr-studio-history-v1";
+const AUTOSAVE_KEY = "qr-studio-autosave-v1";
+const MAX_HISTORY = 30;
+const MAX_TITLE = 60;
+
+const DOT_STYLES: Array<{ id: DotStyle; label: string }> = [
+  { id: "square", label: "Square" },
+  { id: "rounded", label: "Rounded" },
+  { id: "dots", label: "Dots" },
+];
 
 interface QRFields {
   url: string;
@@ -195,33 +231,6 @@ function escapeWifi(value: string): string {
   return value.replace(/([\\;,":])/g, "\\$1");
 }
 
-function buildQRImageUrl(
-  data: string,
-  options: {
-    fg: string;
-    bg: string;
-    ecc: ECCLevel;
-    size: number;
-    format?: DownloadFormat;
-  },
-): string | null {
-  if (!data.trim()) return null;
-
-  const { fg, bg, ecc, size, format = "png" } = options;
-
-  const params = new URLSearchParams({
-    data: data.trim(),
-    size: `${size}x${size}`,
-    color: fg.replace("#", ""),
-    bgcolor: bg.replace("#", ""),
-    ecc,
-    qzone: "1",
-    format,
-  });
-
-  return `https://api.qrserver.com/v1/create-qr-code/?${params.toString()}`;
-}
-
 function isValidEmail(value: string): boolean {
   if (!value) return true;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -260,7 +269,13 @@ function Icon({
     | "external"
     | "refresh"
     | "qr"
-    | "chevron";
+    | "chevron"
+    | "upload"
+    | "trash"
+    | "history"
+    | "image"
+    | "save"
+    | "close";
   size?: number;
   strokeWidth?: number;
 }) {
@@ -371,6 +386,48 @@ function Icon({
       </>
     ),
     chevron: <path d="m7 10 5 5 5-5" />,
+    upload: (
+      <>
+        <path d="M12 16V4" />
+        <path d="m7 9 5-5 5 5" />
+        <path d="M5 20h14" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M4 7h16" />
+        <path d="M9 7V4h6v3" />
+        <path d="m6 7 1 13h10l1-13" />
+        <path d="M10 11v6M14 11v6" />
+      </>
+    ),
+    history: (
+      <>
+        <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+        <path d="M3 3v5h5" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    image: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <circle cx="9" cy="10" r="1.6" />
+        <path d="m4 18 5-5 4 4 3-3 4 4" />
+      </>
+    ),
+    save: (
+      <>
+        <path d="M5 4h11l3 3v13H5z" />
+        <path d="M8 4v5h7V4" />
+        <path d="M8 20v-6h8v6" />
+      </>
+    ),
+    close: (
+      <>
+        <path d="M6 6l12 12" />
+        <path d="M18 6 6 18" />
+      </>
+    ),
   };
 
   return <svg {...common}>{paths[name]}</svg>;
@@ -968,11 +1025,13 @@ function QRPreview({
   bg,
   size,
   scanning,
+  aspect,
 }: {
   qrUrl: string | null;
   bg: string;
   size: number;
   scanning: boolean;
+  aspect: number;
 }) {
   const [imageError, setImageError] = useState(false);
 
@@ -1012,7 +1071,7 @@ function QRPreview({
                 src={qrUrl}
                 alt="Generated QR code preview"
                 width={displaySize}
-                height={displaySize}
+                height={Math.round(displaySize * aspect)}
                 className="qr-image"
                 onError={() => setImageError(true)}
               />
@@ -1086,53 +1145,87 @@ function ActionBar({
   disabled,
   downloading,
   copied,
+  saved,
+  autoSave,
   onDownloadPng,
   onDownloadSvg,
-  onCopyUrl,
+  onCopyImage,
+  onSave,
+  onAutoSaveChange,
 }: {
   disabled: boolean;
   downloading: boolean;
   copied: boolean;
+  saved: boolean;
+  autoSave: boolean;
   onDownloadPng: () => void;
   onDownloadSvg: () => void;
-  onCopyUrl: () => void;
+  onCopyImage: () => void;
+  onSave: () => void;
+  onAutoSaveChange: (value: boolean) => void;
 }) {
   return (
-    <div className="action-area">
-      <button
-        type="button"
-        className="primary-action"
-        disabled={disabled || downloading}
-        onClick={onDownloadPng}
-      >
-        <span>
-          <Icon name="download" size={16} />
-        </span>
-        {downloading ? "Preparing file..." : "Download PNG"}
-        {!downloading && <Icon name="arrow" size={15} strokeWidth={2} />}
-      </button>
+    <>
+      <div className="action-area">
+        <button
+          type="button"
+          className="primary-action"
+          disabled={disabled || downloading}
+          onClick={onDownloadPng}
+        >
+          <span>
+            <Icon name="download" size={16} />
+          </span>
+          {downloading ? "Preparing file..." : "Download PNG"}
+          {!downloading && <Icon name="arrow" size={15} strokeWidth={2} />}
+        </button>
 
-      <button
-        type="button"
-        className="secondary-action"
-        disabled={disabled || downloading}
-        onClick={onDownloadSvg}
-      >
-        <Icon name="qr" size={16} />
-        SVG
-      </button>
+        <button
+          type="button"
+          className="secondary-action"
+          disabled={disabled || downloading}
+          onClick={onDownloadSvg}
+        >
+          <Icon name="qr" size={16} />
+          SVG
+        </button>
 
-      <button
-        type="button"
-        className={`copy-action ${copied ? "copied" : ""}`}
-        disabled={disabled}
-        onClick={onCopyUrl}
-        title="Copy QR image URL"
-        aria-label="Copy QR image URL"
-      >
-        <Icon name={copied ? "check" : "copy"} size={17} />
-      </button>
-    </div>
+        <button
+          type="button"
+          className={`copy-action ${copied ? "copied" : ""}`}
+          disabled={disabled}
+          onClick={onCopyImage}
+          title="Copy QR image"
+          aria-label="Copy QR image"
+        >
+          <Icon name={copied ? "check" : "copy"} size={17} />
+        </button>
+      </div>
+
+      <div className="save-row">
+        <button
+          type="button"
+          className={`save-action ${saved ? "saved" : ""}`}
+          disabled={disabled}
+          onClick={onSave}
+        >
+          <Icon name={saved ? "check" : "save"} size={15} />
+          {saved ? "Saved to history" : "Save to history"}
+        </button>
+
+        <label className="autosave-toggle">
+          <input
+            type="checkbox"
+            checked={autoSave}
+            onChange={(e) => onAutoSaveChange(e.target.checked)}
+          />
+          <span className="autosave-box">
+            {autoSave && <Icon name="check" size={11} strokeWidth={3} />}
+          </span>
+          Auto-save on download
+        </label>
+      </div>
+    </>
   );
 }
 
@@ -1178,6 +1271,346 @@ function FeatureCard({
   );
 }
 
+function BrandingPanel({
+  dotStyle,
+  onDotStyleChange,
+  logo,
+  logoScale,
+  logoPlate,
+  logoError,
+  onLogoFile,
+  onLogoRemove,
+  onLogoScaleChange,
+  onLogoPlateChange,
+  title,
+  titleScale,
+  onTitleChange,
+  onTitleScaleChange,
+  ecc,
+}: {
+  dotStyle: DotStyle;
+  onDotStyleChange: (value: DotStyle) => void;
+  logo: string | null;
+  logoScale: number;
+  logoPlate: boolean;
+  logoError: string;
+  onLogoFile: (file: File) => void;
+  onLogoRemove: () => void;
+  onLogoScaleChange: (value: number) => void;
+  onLogoPlateChange: (value: boolean) => void;
+  title: string;
+  titleScale: number;
+  onTitleChange: (value: string) => void;
+  onTitleScaleChange: (value: number) => void;
+  ecc: ECCLevel;
+}) {
+  const logoProgress = ((logoScale - 10) / 20) * 100;
+  const titleProgress = ((titleScale - 3) / 7) * 100;
+
+  return (
+    <Panel className="branding-panel">
+      <SectionHeader
+        number="03"
+        eyebrow="BRANDING"
+        title="Logo, title & style"
+        description="Add your logo in the center and a title under the QR."
+      />
+
+      <div className="custom-section">
+        <div className="control-heading">
+          <div>
+            <span className="control-title">Logo</span>
+            <span className="control-subtitle">Shown in the QR center</span>
+          </div>
+          {logo && <span className="control-meta">{logoScale}% SIZE</span>}
+        </div>
+
+        <div className="logo-row">
+          <div className="logo-thumb">
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logo} alt="Selected logo" />
+            ) : (
+              <Icon name="image" size={20} />
+            )}
+          </div>
+
+          <div className="logo-actions">
+            <label className="logo-upload">
+              <Icon name="upload" size={15} />
+              {logo ? "Change logo" : "Upload logo"}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                  const file = e.target.files?.[0];
+                  if (file) onLogoFile(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+
+            {logo && (
+              <button
+                type="button"
+                className="logo-remove"
+                onClick={onLogoRemove}
+              >
+                <Icon name="trash" size={14} />
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+
+        {logoError && <div className="inline-error">{logoError}</div>}
+
+        {logo && (
+          <>
+            <input
+              className="premium-range"
+              type="range"
+              min="10"
+              max="30"
+              step="1"
+              value={logoScale}
+              onChange={(e) => onLogoScaleChange(Number(e.target.value))}
+              style={
+                { "--range-progress": `${logoProgress}%` } as CSSProperties
+              }
+              aria-label="Logo size"
+            />
+
+            <label className="autosave-toggle plate-toggle">
+              <input
+                type="checkbox"
+                checked={logoPlate}
+                onChange={(e) => onLogoPlateChange(e.target.checked)}
+              />
+              <span className="autosave-box">
+                {logoPlate && <Icon name="check" size={11} strokeWidth={3} />}
+              </span>
+              Background plate behind logo
+            </label>
+
+            {ecc !== "H" && ecc !== "Q" && (
+              <div className="inline-warning">
+                <Icon name="shield" size={14} />
+                Use High or Maximum error correction so the QR still scans
+                with a logo.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="divider" />
+
+      <div className="custom-section">
+        <div className="control-heading">
+          <div>
+            <span className="control-title">Title</span>
+            <span className="control-subtitle">Printed below the QR</span>
+          </div>
+          {title.trim() && (
+            <span className="control-meta">
+              {title.length}/{MAX_TITLE}
+            </span>
+          )}
+        </div>
+
+        <Input
+          type="text"
+          maxLength={MAX_TITLE}
+          placeholder="e.g. Scan to visit our website"
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          aria-label="QR title"
+        />
+
+        {title.trim() && (
+          <input
+            className="premium-range"
+            type="range"
+            min="3"
+            max="10"
+            step="0.5"
+            value={titleScale}
+            onChange={(e) => onTitleScaleChange(Number(e.target.value))}
+            style={
+              { "--range-progress": `${titleProgress}%` } as CSSProperties
+            }
+            aria-label="Title size"
+          />
+        )}
+      </div>
+
+      <div className="divider" />
+
+      <div className="custom-section">
+        <div className="control-heading">
+          <div>
+            <span className="control-title">Dot style</span>
+            <span className="control-subtitle">Shape of the QR modules</span>
+          </div>
+        </div>
+
+        <div className="style-grid">
+          {DOT_STYLES.map((item) => {
+            const active = dotStyle === item.id;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`style-option ${active ? "active" : ""}`}
+                aria-pressed={active}
+                onClick={() => onDotStyleChange(item.id)}
+              >
+                <span className={`style-sample sample-${item.id}`}>
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function HistoryPanel({
+  items,
+  notice,
+  onLoad,
+  onDelete,
+  onClear,
+}: {
+  items: HistoryItem[];
+  notice: string;
+  onLoad: (item: HistoryItem) => void;
+  onDelete: (id: string) => void;
+  onClear: () => void;
+}) {
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const cards = useMemo(
+    () =>
+      items.map((item) => {
+        const data = buildQRData(item.type, item.fields);
+        let thumb: RenderResult | null = null;
+
+        try {
+          if (data) {
+            thumb = renderQr(data, {
+              fg: item.fg,
+              bg: item.bg,
+              ecc: item.ecc,
+              size: 240,
+              dotStyle: item.dotStyle,
+              title: item.title,
+              titleScale: item.titleScale,
+              logo: item.logo,
+              logoScale: item.logoScale,
+              logoPlate: item.logoPlate,
+            });
+          }
+        } catch {
+          thumb = null;
+        }
+
+        return { item, data, thumb };
+      }),
+    [items],
+  );
+
+  return (
+    <section className="premium-panel history-panel p-6">
+      <div className="history-head">
+        <SectionHeader
+          number="04"
+          eyebrow="HISTORY"
+          title="Saved QR codes"
+          description="Stored only in this browser. Click a card to open it again."
+        />
+
+        {items.length > 0 && (
+          <button
+            type="button"
+            className={`history-clear ${confirmClear ? "confirm" : ""}`}
+            onClick={() => {
+              if (confirmClear) {
+                onClear();
+                setConfirmClear(false);
+              } else {
+                setConfirmClear(true);
+                setTimeout(() => setConfirmClear(false), 3000);
+              }
+            }}
+          >
+            <Icon name="trash" size={14} />
+            {confirmClear ? "Click again to clear all" : "Clear all"}
+          </button>
+        )}
+      </div>
+
+      {notice && <div className="inline-error history-notice">{notice}</div>}
+
+      {items.length === 0 ? (
+        <div className="history-empty">
+          <Icon name="history" size={22} />
+          <p>No saved QR codes yet.</p>
+          <span>Use “Save to history” under the preview.</span>
+        </div>
+      ) : (
+        <div className="history-grid">
+          {cards.map(({ item, data, thumb }) => (
+            <div key={item.id} className="history-card">
+              <button
+                type="button"
+                className="history-open"
+                onClick={() => onLoad(item)}
+                title="Open this QR"
+              >
+                <span className="history-thumb" style={{ background: item.bg }}>
+                  {thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={thumb.dataUrl} alt="Saved QR preview" />
+                  ) : (
+                    <Icon name="qr" size={24} />
+                  )}
+                </span>
+
+                <span className="history-title">
+                  {item.title.trim() || data || "Untitled"}
+                </span>
+
+                <span className="history-meta">
+                  {item.type} · {new Date(item.createdAt).toLocaleDateString()}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="history-delete"
+                onClick={() => onDelete(item.id)}
+                aria-label="Delete from history"
+                title="Delete"
+              >
+                <Icon name="close" size={13} strokeWidth={2.2} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function QRGenerator() {
   const [type, setType] = useState<QRType>("URL");
   const [fields, setFields] = useState<QRFields>(emptyFields);
@@ -1192,6 +1625,21 @@ export default function QRGenerator() {
   const [scanning, setScanning] = useState(false);
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+
+  const [dotStyle, setDotStyle] = useState<DotStyle>("square");
+  const [title, setTitle] = useState("");
+  const [titleScale, setTitleScale] = useState(6);
+  const [logo, setLogo] = useState<string | null>(null);
+  const [logoScale, setLogoScale] = useState(22);
+  const [logoPlate, setLogoPlate] = useState(true);
+  const [logoError, setLogoError] = useState("");
+
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const historyRef = useRef<HistoryItem[]>([]);
+  const [historyNotice, setHistoryNotice] = useState("");
+  const [autoSave, setAutoSave] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1251,21 +1699,58 @@ export default function QRGenerator() {
       if (copyTimer.current) {
         clearTimeout(copyTimer.current);
       }
+
+      if (savedTimer.current) {
+        clearTimeout(savedTimer.current);
+      }
     };
   }, []);
 
-  const qrImageUrl = useMemo(() => {
-    if (invalid || !content) return null;
+  const { qr, qrError } = useMemo<{
+    qr: RenderResult | null;
+    qrError: string;
+  }>(() => {
+    if (invalid || !content) return { qr: null, qrError: "" };
 
-    return buildQRImageUrl(content, {
-      fg,
-      bg,
-      ecc,
-      size,
-    });
-  }, [content, fg, bg, ecc, size, invalid]);
+    try {
+      return {
+        qr: renderQr(content, {
+          fg,
+          bg,
+          ecc,
+          size,
+          dotStyle,
+          title,
+          titleScale,
+          logo,
+          logoScale,
+          logoPlate,
+        }),
+        qrError: "",
+      };
+    } catch {
+      return {
+        qr: null,
+        qrError:
+          "This content is too long for the selected error correction level. Shorten it or choose a lower level.",
+      };
+    }
+  }, [
+    content,
+    invalid,
+    fg,
+    bg,
+    ecc,
+    size,
+    dotStyle,
+    title,
+    titleScale,
+    logo,
+    logoScale,
+    logoPlate,
+  ]);
 
-  const hasContent = Boolean(content) && !invalid;
+  const hasContent = Boolean(content) && !invalid && Boolean(qr);
 
   const handleTypeChange = useCallback((newType: QRType) => {
     setType(newType);
@@ -1285,53 +1770,213 @@ export default function QRGenerator() {
     setBg(selected.bg);
   }, []);
 
+  // ---------- History ----------
+  const commitHistory = useCallback((next: HistoryItem[]) => {
+    historyRef.current = next;
+    setHistory(next);
+
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      setHistoryNotice("");
+    } catch {
+      setHistoryNotice(
+        "Browser storage is full. Delete a few saved items (large logos take space).",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const raw = localStorage.getItem(HISTORY_KEY);
+
+        if (raw) {
+          const parsed = JSON.parse(raw);
+
+          if (Array.isArray(parsed)) {
+            historyRef.current = parsed as HistoryItem[];
+            setHistory(parsed as HistoryItem[]);
+          }
+        }
+
+        setAutoSave(localStorage.getItem(AUTOSAVE_KEY) === "1");
+      } catch {
+        // Ignore corrupted storage.
+      }
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const flashSaved = useCallback(() => {
+    setSaved(true);
+
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+
+    savedTimer.current = setTimeout(() => setSaved(false), 2000);
+  }, []);
+
+  const saveToHistory = useCallback(() => {
+    if (!content || invalid) return;
+
+    const snapshot = {
+      type,
+      fields,
+      fg,
+      bg,
+      ecc,
+      size,
+      dotStyle,
+      title,
+      titleScale,
+      logo,
+      logoScale,
+      logoPlate,
+    };
+
+    const signature = JSON.stringify(snapshot);
+
+    const rest = historyRef.current.filter((entry) => {
+      const { id: _id, createdAt: _createdAt, ...other } = entry;
+      void _id;
+      void _createdAt;
+      return JSON.stringify(other) !== signature;
+    });
+
+    const item: HistoryItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: Date.now(),
+      ...snapshot,
+    };
+
+    commitHistory([item, ...rest].slice(0, MAX_HISTORY));
+
+    flashSaved();
+  }, [
+    content,
+    invalid,
+    type,
+    fields,
+    fg,
+    bg,
+    ecc,
+    size,
+    dotStyle,
+    title,
+    titleScale,
+    logo,
+    logoScale,
+    logoPlate,
+    flashSaved,
+    commitHistory,
+  ]);
+
+  const handleLoadHistory = useCallback((item: HistoryItem) => {
+    setType(item.type);
+    setFields({ ...emptyFields(), ...item.fields });
+    setFg(item.fg);
+    setBg(item.bg);
+    setEcc(item.ecc);
+    setSize(item.size);
+    setPreset(-1);
+    setDotStyle(item.dotStyle);
+    setTitle(item.title);
+    setTitleScale(item.titleScale);
+    setLogo(item.logo);
+    setLogoScale(item.logoScale);
+    setLogoPlate(item.logoPlate);
+    setLogoError("");
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const handleDeleteHistory = useCallback(
+    (id: string) => {
+      commitHistory(historyRef.current.filter((entry) => entry.id !== id));
+    },
+    [commitHistory],
+  );
+
+  const handleClearHistory = useCallback(() => {
+    commitHistory([]);
+  }, [commitHistory]);
+
+  const handleAutoSaveChange = useCallback((value: boolean) => {
+    setAutoSave(value);
+
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, value ? "1" : "0");
+    } catch {
+      // Ignore.
+    }
+  }, []);
+
+  // ---------- Logo ----------
+  const handleLogoFile = useCallback(async (file: File) => {
+    try {
+      const dataUrl = await readLogo(file);
+
+      setLogo(dataUrl);
+      setLogoError("");
+      setEcc("H");
+    } catch (error) {
+      setLogoError(
+        error instanceof Error ? error.message : "Unable to read this image.",
+      );
+    }
+  }, []);
+
+  // ---------- Download / copy ----------
   const handleDownload = useCallback(
     async (format: DownloadFormat) => {
-      const url = buildQRImageUrl(content, {
-        fg,
-        bg,
-        ecc,
-        size,
-        format,
-      });
-
-      if (!url) return;
+      if (!qr) return;
 
       setDownloading(true);
 
       try {
-        const response = await fetch(url);
+        const blob =
+          format === "svg"
+            ? new Blob([qr.svg], { type: "image/svg+xml;charset=utf-8" })
+            : await svgToPngBlob(qr.svg, qr.width, qr.height);
 
-        if (!response.ok) {
-          throw new Error("Unable to download QR");
-        }
+        const slug = title
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 40);
 
-        const blob = await response.blob();
         const objectUrl = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
 
         anchor.href = objectUrl;
-        anchor.download = `qr-${type.toLowerCase()}-${size}px.${format}`;
+        anchor.download = `${slug || `qr-${type.toLowerCase()}`}-${size}px.${format}`;
 
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
 
-        URL.revokeObjectURL(objectUrl);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+
+        if (autoSave) saveToHistory();
       } catch {
-        window.open(url, "_blank", "noopener,noreferrer");
+        setLogoError("Download failed. Please try again.");
       } finally {
         setDownloading(false);
       }
     },
-    [content, fg, bg, ecc, size, type],
+    [qr, title, type, size, autoSave, saveToHistory],
   );
 
-  const handleCopyUrl = useCallback(async () => {
-    if (!qrImageUrl) return;
+  const handleCopyImage = useCallback(async () => {
+    if (!qr) return;
 
     try {
-      await navigator.clipboard.writeText(qrImageUrl);
+      const blob = await svgToPngBlob(qr.svg, qr.width, qr.height);
+
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob }),
+      ]);
 
       setCopied(true);
 
@@ -1345,7 +1990,7 @@ export default function QRGenerator() {
     } catch {
       setCopied(false);
     }
-  }, [qrImageUrl]);
+  }, [qr]);
 
   return (
     <main className="qr-app">
@@ -3036,6 +3681,385 @@ export default function QRGenerator() {
             transition-duration: .01ms !important;
           }
         }
+
+        /* ---------- Branding / History / Save additions ---------- */
+        .branding-panel {
+          padding: 0 0 6px;
+          margin-top: 12px;
+        }
+
+        .logo-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin: 4px 0 12px;
+        }
+
+        .logo-thumb {
+          width: 58px;
+          height: 58px;
+          flex: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+          border: 1px dashed #2F3B36;
+          border-radius: 14px;
+          color: #53605C;
+          background: #0B100F;
+        }
+
+        .logo-thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+        }
+
+        .logo-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .logo-upload,
+        .logo-remove,
+        .save-action,
+        .history-clear {
+          min-height: 38px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          padding: 0 13px;
+          border: 1px solid #26312D;
+          border-radius: 11px;
+          color: #9AA7A1;
+          background: #0B100F;
+          font-size: 11px;
+          font-weight: 650;
+          cursor: pointer;
+          transition: border-color .18s ease, color .18s ease, background .18s ease;
+        }
+
+        .logo-upload input {
+          display: none;
+        }
+
+        .logo-upload {
+          color: ${ACCENT};
+          border-color: rgba(0,200,150,.28);
+          background: rgba(0,200,150,.06);
+        }
+
+        .logo-upload:hover,
+        .logo-remove:hover,
+        .save-action:hover:not(:disabled),
+        .history-clear:hover {
+          border-color: #394640;
+          color: #EDF3F0;
+          background: #101714;
+        }
+
+        .logo-remove:hover,
+        .history-clear.confirm {
+          border-color: rgba(255,90,90,.4);
+          color: #FF8A8A;
+        }
+
+        .inline-error,
+        .inline-warning {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          margin: 8px 0;
+          padding: 9px 11px;
+          border-radius: 10px;
+          font-size: 11px;
+          line-height: 1.45;
+        }
+
+        .inline-error {
+          border: 1px solid rgba(255,90,90,.25);
+          color: #FF9C9C;
+          background: rgba(255,90,90,.06);
+        }
+
+        .inline-warning {
+          border: 1px solid rgba(255,190,70,.25);
+          color: #F2C46B;
+          background: rgba(255,190,70,.06);
+        }
+
+        .inline-warning svg {
+          flex: none;
+          margin-top: 1px;
+        }
+
+        .qr-error {
+          margin: 0 13px 4px;
+        }
+
+        .plate-toggle {
+          margin-top: 12px;
+        }
+
+        .style-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+          margin-top: 4px;
+        }
+
+        .style-option {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 11px 6px 10px;
+          border: 1px solid #1D2724;
+          border-radius: 13px;
+          color: #82908B;
+          background: #0B100F;
+          font-size: 11px;
+          font-weight: 650;
+          cursor: pointer;
+          transition: border-color .18s ease, color .18s ease, background .18s ease;
+        }
+
+        .style-option:hover {
+          border-color: #33423C;
+          color: #EDF3F0;
+        }
+
+        .style-option.active {
+          border-color: rgba(0,200,150,.5);
+          color: ${ACCENT};
+          background: rgba(0,200,150,.07);
+        }
+
+        .style-sample {
+          display: grid;
+          grid-template-columns: repeat(2, 9px);
+          gap: 3px;
+        }
+
+        .style-sample i {
+          width: 9px;
+          height: 9px;
+          background: currentColor;
+        }
+
+        .sample-rounded i {
+          border-radius: 3px;
+        }
+
+        .sample-dots i {
+          border-radius: 50%;
+        }
+
+        .save-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 10px;
+          padding: 0 13px 14px;
+        }
+
+        .save-action.saved {
+          border-color: rgba(0,200,150,.3);
+          color: ${ACCENT};
+          background: rgba(0,200,150,.07);
+        }
+
+        .save-action:disabled {
+          opacity: .3;
+          cursor: not-allowed;
+        }
+
+        .autosave-toggle {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: #82908B;
+          font-size: 11px;
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .autosave-toggle input {
+          position: absolute;
+          opacity: 0;
+          pointer-events: none;
+        }
+
+        .autosave-box {
+          width: 17px;
+          height: 17px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid #33423C;
+          border-radius: 5px;
+          color: #03130E;
+          background: #0B100F;
+        }
+
+        .autosave-toggle input:checked + .autosave-box {
+          border-color: ${ACCENT};
+          background: ${ACCENT};
+        }
+
+        .autosave-toggle input:focus-visible + .autosave-box {
+          outline: 2px solid ${ACCENT};
+          outline-offset: 2px;
+        }
+
+        .history-panel {
+          margin-top: 16px;
+          padding-bottom: 20px;
+        }
+
+        .history-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 14px;
+          padding-right: 18px;
+        }
+
+        .history-head .section-header {
+          flex: 1;
+        }
+
+        .history-head .history-clear {
+          margin-top: 18px;
+          flex: none;
+        }
+
+        .history-notice {
+          margin: 0 18px 8px;
+        }
+
+        .history-empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          padding: 26px 18px 10px;
+          color: #53605C;
+          text-align: center;
+        }
+
+        .history-empty p {
+          margin: 6px 0 0;
+          color: #82908B;
+          font-size: 13px;
+          font-weight: 650;
+        }
+
+        .history-empty span {
+          font-size: 11px;
+        }
+
+        .history-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 12px;
+          padding: 4px 18px 0;
+        }
+
+        .history-card {
+          position: relative;
+          border: 1px solid #1D2724;
+          border-radius: 15px;
+          background: #0B100F;
+          transition: border-color .18s ease, transform .18s ease;
+        }
+
+        .history-card:hover {
+          border-color: rgba(0,200,150,.4);
+          transform: translateY(-2px);
+        }
+
+        .history-open {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          width: 100%;
+          padding: 9px;
+          border: 0;
+          color: inherit;
+          background: transparent;
+          text-align: left;
+          cursor: pointer;
+        }
+
+        .history-thumb {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          aspect-ratio: 1 / 1;
+          overflow: hidden;
+          margin-bottom: 4px;
+          border-radius: 9px;
+          color: #53605C;
+        }
+
+        .history-thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+        }
+
+        .history-title {
+          overflow: hidden;
+          color: #E4ECE8;
+          font-size: 11.5px;
+          font-weight: 650;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .history-meta {
+          color: #5F6C67;
+          font-family: "DM Mono", monospace;
+          font-size: 9px;
+          letter-spacing: .04em;
+        }
+
+        .history-delete {
+          position: absolute;
+          top: 14px;
+          right: 14px;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid rgba(0,0,0,.18);
+          border-radius: 8px;
+          color: #fff;
+          background: rgba(10,14,13,.72);
+          opacity: 0;
+          cursor: pointer;
+          transition: opacity .15s ease, background .15s ease;
+        }
+
+        .history-card:hover .history-delete,
+        .history-delete:focus-visible {
+          opacity: 1;
+        }
+
+        .history-delete:hover {
+          background: rgba(220,60,60,.9);
+        }
+
+        @media (hover: none) {
+          .history-delete {
+            opacity: 1;
+          }
+        }
       `}</style>
 
       <div className="qr-shell">
@@ -3145,6 +4169,27 @@ export default function QRGenerator() {
               onSizeChange={setSize}
               onPresetChange={handlePreset}
             />
+
+            <BrandingPanel
+              dotStyle={dotStyle}
+              onDotStyleChange={setDotStyle}
+              logo={logo}
+              logoScale={logoScale}
+              logoPlate={logoPlate}
+              logoError={logoError}
+              onLogoFile={handleLogoFile}
+              onLogoRemove={() => {
+                setLogo(null);
+                setLogoError("");
+              }}
+              onLogoScaleChange={setLogoScale}
+              onLogoPlateChange={setLogoPlate}
+              title={title}
+              titleScale={titleScale}
+              onTitleChange={setTitle}
+              onTitleScaleChange={setTitleScale}
+              ecc={ecc}
+            />
           </div>
 
           <div className="right-column">
@@ -3167,11 +4212,14 @@ export default function QRGenerator() {
               </div>
 
               <QRPreview
-                qrUrl={qrImageUrl}
+                qrUrl={qr?.dataUrl ?? null}
                 bg={bg}
                 size={size}
                 scanning={scanning}
+                aspect={qr ? qr.height / qr.width : 1}
               />
+
+              {qrError && <div className="inline-error qr-error">{qrError}</div>}
 
               {hasContent && (
                 <StatusBar content={content} size={size} ecc={ecc} />
@@ -3181,9 +4229,13 @@ export default function QRGenerator() {
                 disabled={!hasContent}
                 downloading={downloading}
                 copied={copied}
+                saved={saved}
+                autoSave={autoSave}
                 onDownloadPng={() => handleDownload("png")}
                 onDownloadSvg={() => handleDownload("svg")}
-                onCopyUrl={handleCopyUrl}
+                onCopyImage={handleCopyImage}
+                onSave={saveToHistory}
+                onAutoSaveChange={handleAutoSaveChange}
               />
             </Panel>
 
@@ -3206,6 +4258,14 @@ export default function QRGenerator() {
             </div>
           </div>
         </div>
+
+        <HistoryPanel
+          items={history}
+          notice={historyNotice}
+          onLoad={handleLoadHistory}
+          onDelete={handleDeleteHistory}
+          onClear={handleClearHistory}
+        />
 
         <footer className="qr-footer">
           <span className="footer-brand">QR STUDIO · DARK EDITION</span>
