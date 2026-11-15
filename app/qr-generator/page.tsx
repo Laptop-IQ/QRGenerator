@@ -8,7 +8,9 @@ import {
   useState,
   type ChangeEvent,
   type CSSProperties,
+  type InputHTMLAttributes,
   type ReactNode,
+  type TextareaHTMLAttributes,
 } from "react";
 
 import {
@@ -20,23 +22,22 @@ import {
 } from "./qr-render";
 
 const ACCENT = "#00C896";
-const ACCENT_BRIGHT = "#00E0A8";
-
-const COLORS = {
-  bg: "#060908",
-  surface: "#0C1110",
-  surface2: "#101615",
-  surface3: "#141B19",
-  border: "#1D2724",
-  borderLight: "#293530",
-  text: "#F3F7F5",
-  muted: "#82908B",
-  dim: "#53605C",
-} as const;
 
 type QRType = "URL" | "Text" | "Email" | "Phone" | "WiFi";
 type ECCLevel = "L" | "M" | "Q" | "H";
 type DownloadFormat = "png" | "svg";
+
+interface QRFields {
+  url: string;
+  text: string;
+  email: string;
+  subject: string;
+  body: string;
+  phone: string;
+  ssid: string;
+  password: string;
+  security: "WPA" | "WEP" | "None";
+}
 
 interface HistoryItem {
   id: string;
@@ -55,34 +56,23 @@ interface HistoryItem {
   logoPlate: boolean;
 }
 
+interface Preset {
+  name: string;
+  fg: string;
+  bg: string;
+}
+
 const HISTORY_KEY = "qr-studio-history-v1";
 const AUTOSAVE_KEY = "qr-studio-autosave-v1";
 const MAX_HISTORY = 30;
 const MAX_TITLE = 60;
+const MAX_TEXT = 1200;
 
 const DOT_STYLES: Array<{ id: DotStyle; label: string }> = [
   { id: "square", label: "Square" },
   { id: "rounded", label: "Rounded" },
   { id: "dots", label: "Dots" },
 ];
-
-interface QRFields {
-  url: string;
-  text: string;
-  email: string;
-  subject: string;
-  body: string;
-  phone: string;
-  ssid: string;
-  password: string;
-  security: "WPA" | "WEP" | "None";
-}
-
-interface Preset {
-  name: string;
-  fg: string;
-  bg: string;
-}
 
 const QR_TYPES: Array<{
   id: QRType;
@@ -108,12 +98,7 @@ const QR_TYPES: Array<{
     description: "Email with subject",
     icon: "mail",
   },
-  {
-    id: "Phone",
-    label: "Phone",
-    description: "Phone number",
-    icon: "phone",
-  },
+  { id: "Phone", label: "Phone", description: "Phone number", icon: "phone" },
   {
     id: "WiFi",
     label: "WiFi",
@@ -135,35 +120,42 @@ const PRESETS: Preset[] = [
 
 const ECC_LEVELS: Record<
   ECCLevel,
-  {
-    name: string;
-    recovery: string;
-    description: string;
-  }
+  { name: string; recovery: string; description: string }
 > = {
-  L: {
-    name: "Low",
-    recovery: "7%",
-    description: "Smallest QR",
-  },
-  M: {
-    name: "Medium",
-    recovery: "15%",
-    description: "Recommended",
-  },
-  Q: {
-    name: "High",
-    recovery: "25%",
-    description: "More damage resistant",
-  },
-  H: {
-    name: "Maximum",
-    recovery: "30%",
-    description: "Print & logos",
-  },
+  L: { name: "Low", recovery: "7%", description: "Smallest QR" },
+  M: { name: "Medium", recovery: "15%", description: "Recommended" },
+  Q: { name: "High", recovery: "25%", description: "More damage resistant" },
+  H: { name: "Maximum", recovery: "30%", description: "Print & logos" },
 };
 
-const MAX_TEXT = 1200;
+/* ------------------------------------------------------------------ */
+/* Shared Tailwind class strings (kept as full literals for the JIT)   */
+/* ------------------------------------------------------------------ */
+
+const MONO = "font-['DM_Mono','SFMono-Regular',Consolas,monospace]";
+
+const PANEL =
+  "overflow-hidden rounded-[20px] border border-[#1D2724] bg-[#0C1110] bg-[linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.008))] shadow-[0_1px_1px_rgba(0,0,0,.35),0_20px_65px_rgba(0,0,0,.18)]";
+
+const INPUT =
+  "w-full min-h-[43px] rounded-xl border border-[#202B27] bg-[#090E0D] px-[13px] py-[11px] text-[13px] leading-normal text-[#EDF3F0] outline-none transition placeholder:text-[#3E4945] hover:border-[#2E3A35] focus:border-[#00C896]/75 focus:bg-[#0B1110] focus:shadow-[0_0_0_3px_rgba(0,200,150,.075)] aria-[invalid=true]:border-red-400/70";
+
+const BTN =
+  "inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[7px] rounded-[11px] border border-[#26312D] bg-[#0B100F] px-[13px] text-[11px] font-semibold text-[#9AA7A1] transition hover:border-[#394640] hover:bg-[#101714] hover:text-[#EDF3F0] disabled:cursor-not-allowed disabled:opacity-30";
+
+const RANGE =
+  "mt-[7px] h-[5px] w-full cursor-pointer appearance-none rounded-full outline-none bg-[linear-gradient(to_right,#00C896_var(--range-progress),#242E2A_var(--range-progress))] [&::-webkit-slider-thumb]:h-[17px] [&::-webkit-slider-thumb]:w-[17px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-solid [&::-webkit-slider-thumb]:border-[#101615] [&::-webkit-slider-thumb]:bg-[#00C896] [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,200,150,.3),0_3px_9px_rgba(0,0,0,.45)] [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-solid [&::-moz-range-thumb]:border-[#101615] [&::-moz-range-thumb]:bg-[#00C896]";
+
+const INLINE_ERROR =
+  "my-2 flex items-start gap-2 rounded-[10px] border border-[rgba(255,90,90,.25)] bg-[rgba(255,90,90,.06)] px-[11px] py-[9px] text-[11px] leading-[1.45] text-[#FF9C9C]";
+
+const INLINE_WARNING =
+  "my-2 flex items-start gap-2 rounded-[10px] border border-[rgba(255,190,70,.25)] bg-[rgba(255,190,70,.06)] px-[11px] py-[9px] text-[11px] leading-[1.45] text-[#F2C46B]";
+
+const CONTROL_TITLE = "block text-[11px] font-semibold text-[#B6C0BC]";
+const CONTROL_SUB = "mt-[3px] block text-[9px] text-[#4F5C57]";
+const CONTROL_META = `${MONO} whitespace-nowrap text-[7px] tracking-[.1em] text-[#48544F]`;
+const DIVIDER = "mb-[19px] h-px bg-[#1B2421]";
 
 function emptyFields(): QRFields {
   return {
@@ -179,56 +171,43 @@ function emptyFields(): QRFields {
   };
 }
 
+function escapeWifi(value: string): string {
+  return value.replace(/([\\;,":])/g, "\\$1");
+}
+
 function buildQRData(type: QRType, fields: QRFields): string {
   switch (type) {
     case "URL":
       return fields.url.trim();
-
     case "Text":
       return fields.text.trim();
-
     case "Phone": {
       const phone = fields.phone.trim();
       return phone ? `tel:${phone}` : "";
     }
-
     case "Email": {
       const email = fields.email.trim();
-
       if (!email) return "";
-
       const query: string[] = [];
-
       if (fields.subject.trim()) {
         query.push(`subject=${encodeURIComponent(fields.subject.trim())}`);
       }
-
       if (fields.body.trim()) {
         query.push(`body=${encodeURIComponent(fields.body.trim())}`);
       }
-
       return `mailto:${email}${query.length ? `?${query.join("&")}` : ""}`;
     }
-
     case "WiFi": {
       const ssid = fields.ssid.trim();
-
       if (!ssid) return "";
-
       const security = fields.security || "WPA";
-
       return `WIFI:T:${security};S:${escapeWifi(ssid)};P:${escapeWifi(
         fields.password,
       )};;`;
     }
-
     default:
       return "";
   }
-}
-
-function escapeWifi(value: string): string {
-  return value.replace(/([\\;,":])/g, "\\$1");
 }
 
 function isValidEmail(value: string): boolean {
@@ -238,7 +217,6 @@ function isValidEmail(value: string): boolean {
 
 function isValidURL(value: string): boolean {
   if (!value) return true;
-
   try {
     const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:";
@@ -247,51 +225,38 @@ function isValidURL(value: string): boolean {
   }
 }
 
+type IconName =
+  | "link"
+  | "text"
+  | "mail"
+  | "phone"
+  | "wifi"
+  | "check"
+  | "download"
+  | "copy"
+  | "sparkles"
+  | "bolt"
+  | "shield"
+  | "printer"
+  | "arrow"
+  | "qr"
+  | "upload"
+  | "trash"
+  | "history"
+  | "image"
+  | "save"
+  | "close";
+
 function Icon({
   name,
   size = 18,
   strokeWidth = 1.8,
 }: {
-  name:
-    | "link"
-    | "text"
-    | "mail"
-    | "phone"
-    | "wifi"
-    | "check"
-    | "download"
-    | "copy"
-    | "sparkles"
-    | "bolt"
-    | "shield"
-    | "printer"
-    | "arrow"
-    | "external"
-    | "refresh"
-    | "qr"
-    | "chevron"
-    | "upload"
-    | "trash"
-    | "history"
-    | "image"
-    | "save"
-    | "close";
+  name: IconName;
   size?: number;
   strokeWidth?: number;
 }) {
-  const common = {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-  };
-
-  const paths: Record<string, ReactNode> = {
+  const paths: Record<IconName, ReactNode> = {
     link: (
       <>
         <path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15" />
@@ -362,19 +327,6 @@ function Icon({
         <path d="m13 6 6 6-6 6" />
       </>
     ),
-    external: (
-      <>
-        <path d="M14 5h5v5" />
-        <path d="M10 14 19 5" />
-        <path d="M19 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" />
-      </>
-    ),
-    refresh: (
-      <>
-        <path d="M20 11a8 8 0 1 0 1 5" />
-        <path d="M20 5v6h-6" />
-      </>
-    ),
     qr: (
       <>
         <path d="M4 4h6v6H4z" />
@@ -385,7 +337,6 @@ function Icon({
         <path d="M14 18h2v2h-2z" />
       </>
     ),
-    chevron: <path d="m7 10 5 5 5-5" />,
     upload: (
       <>
         <path d="M12 16V4" />
@@ -430,7 +381,22 @@ function Icon({
     ),
   };
 
-  return <svg {...common}>{paths[name]}</svg>;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      {paths[name]}
+    </svg>
+  );
 }
 
 function QRLogo({
@@ -450,13 +416,10 @@ function QRLogo({
     >
       <rect x="2" y="2" width="11" height="11" rx="2.5" fill={accent} />
       <rect x="5" y="5" width="5" height="5" rx="1" fill="#07100D" />
-
       <rect x="19" y="2" width="11" height="11" rx="2.5" fill={accent} />
       <rect x="22" y="5" width="5" height="5" rx="1" fill="#07100D" />
-
       <rect x="2" y="19" width="11" height="11" rx="2.5" fill={accent} />
       <rect x="5" y="22" width="5" height="5" rx="1" fill="#07100D" />
-
       <rect x="19" y="19" width="4" height="4" rx="1" fill={accent} />
       <rect x="26" y="19" width="4" height="4" rx="1" fill={accent} />
       <rect x="19" y="26" width="4" height="4" rx="1" fill={accent} />
@@ -472,36 +435,26 @@ function Panel({
   children: ReactNode;
   className?: string;
 }) {
-  return <section className={`premium-panel ${className}`}>{children}</section>;
-}
-
-function FieldLabel({
-  children,
-  required = false,
-}: {
-  children: ReactNode;
-  required?: boolean;
-}) {
-  return (
-    <label className="field-label">
-      {children}
-      {required && <span className="required">*</span>}
-    </label>
-  );
+  return <section className={`${PANEL} ${className}`}>{children}</section>;
 }
 
 function Input({
   className = "",
   ...props
-}: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={`premium-input ${className}`} {...props} />;
+}: InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={`${INPUT} ${className}`} {...props} />;
 }
 
 function Textarea({
   className = "",
   ...props
-}: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={`premium-input ${className}`} {...props} />;
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={`${INPUT} min-h-[130px] resize-y ${className}`}
+      {...props}
+    />
+  );
 }
 
 function FormField({
@@ -514,9 +467,31 @@ function FormField({
   children: ReactNode;
 }) {
   return (
-    <div className="form-field">
-      <FieldLabel required={required}>{label}</FieldLabel>
+    <div className="mb-[15px] last:mb-0">
+      <label
+        className={`${MONO} mb-[7px] block text-[8px] font-semibold uppercase tracking-[.12em] text-[#71807A]`}
+      >
+        {label}
+        {required && <span className="ml-[3px] text-[#00C896]">*</span>}
+      </label>
       {children}
+    </div>
+  );
+}
+
+function FieldHint({
+  children,
+  right,
+  error = false,
+}: {
+  children: ReactNode;
+  right?: ReactNode;
+  error?: boolean;
+}) {
+  return (
+    <div className="mt-[7px] flex items-center justify-between gap-2.5 text-[9px] leading-[1.4] text-[#4F5B56]">
+      <span className={error ? "text-[#F87171]" : ""}>{children}</span>
+      {right && <span className={`${MONO} text-[#46524D]`}>{right}</span>}
     </div>
   );
 }
@@ -535,19 +510,56 @@ function SectionHeader({
   badge?: ReactNode;
 }) {
   return (
-    <div className="section-header">
-      <div className="section-heading">
+    <div className="mb-[18px] flex items-start justify-between gap-[15px]">
+      <div className="min-w-0">
         {(number || eyebrow) && (
-          <div className="section-eyebrow">
-            {number && <span className="section-number">{number}</span>}
+          <div
+            className={`${MONO} mb-[5px] flex items-center gap-[7px] text-[8px] font-semibold tracking-[.14em] text-[#56635E]`}
+          >
+            {number && <span className="text-[#00C896]">{number}</span>}
             {eyebrow}
           </div>
         )}
-        <h2>{title}</h2>
-        {description && <p>{description}</p>}
+        <h2 className="m-0 text-base font-bold tracking-[-.025em] text-[#EAF0ED] max-[450px]:text-sm">
+          {title}
+        </h2>
+        {description && (
+          <p className="mt-[5px] max-w-[310px] text-[11px] leading-[1.55] text-[#68756F]">
+            {description}
+          </p>
+        )}
       </div>
       {badge}
     </div>
+  );
+}
+
+function Checkbox({
+  checked,
+  onChange,
+  children,
+  className = "",
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label
+      className={`inline-flex cursor-pointer select-none items-center gap-2 text-[11px] text-[#82908B] ${className}`}
+    >
+      <input
+        type="checkbox"
+        className="peer sr-only"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="inline-flex h-[17px] w-[17px] items-center justify-center rounded-[5px] border border-[#33423C] bg-[#0B100F] text-[#03130E] peer-checked:border-[#00C896] peer-checked:bg-[#00C896] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#00C896]">
+        {checked && <Icon name="check" size={11} strokeWidth={3} />}
+      </span>
+      {children}
+    </label>
   );
 }
 
@@ -559,17 +571,24 @@ function TypeSelector({
   onChange: (value: QRType) => void;
 }) {
   return (
-    <Panel className="type-panel">
-      <div className="type-topline">
+    <Panel className="p-3.5 max-[900px]:col-span-full max-[450px]:p-[13px]">
+      <div className="flex items-center justify-between gap-[15px] px-1 pb-3 pt-[3px]">
         <div>
-          <span className="micro-label">CREATE</span>
-          <h2>Choose a format</h2>
+          <span
+            className={`${MONO} mb-[3px] block text-[8px] font-semibold tracking-[.17em] text-[#56625E]`}
+          >
+            CREATE
+          </span>
+          <h2 className="m-0 text-[13px] font-semibold tracking-[-.015em] text-[#D8E0DD]">
+            Choose a format
+          </h2>
         </div>
-
-        <span className="format-count">05 FORMATS</span>
+        <span className={`${MONO} text-[8px] tracking-[.1em] text-[#3F4A46]`}>
+          05 FORMATS
+        </span>
       </div>
 
-      <div className="type-grid">
+      <div className="grid grid-cols-5 gap-1.5 max-[680px]:gap-[5px]">
         {QR_TYPES.map((item) => {
           const active = value === item.id;
 
@@ -577,18 +596,38 @@ function TypeSelector({
             <button
               key={item.id}
               type="button"
-              className={`type-button ${active ? "active" : ""}`}
-              onClick={() => onChange(item.id)}
               aria-pressed={active}
+              onClick={() => onChange(item.id)}
+              className={`relative flex min-h-[78px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[13px] border px-1 py-2.5 transition hover:-translate-y-px max-[680px]:min-h-[70px] max-[450px]:min-h-16 max-[450px]:rounded-[10px] ${
+                active
+                  ? "border-[#33443E] bg-[#111816] bg-[linear-gradient(145deg,rgba(0,200,150,.075),rgba(255,255,255,.018))] text-[#F1F6F4] shadow-[inset_0_0_0_1px_rgba(0,200,150,.055),0_8px_24px_rgba(0,0,0,.16)]"
+                  : "border-[#1D2724] bg-[#0A0F0E] text-[#66736E] hover:border-[#34403B] hover:bg-[#0E1412] hover:text-[#C5CECA]"
+              }`}
             >
-              {active && <span className="active-dot" />}
+              {active && (
+                <span className="absolute right-[7px] top-[7px] h-[5px] w-[5px] rounded-full bg-[#00C896] shadow-[0_0_10px_#00C896]" />
+              )}
 
-              <span className="type-icon">
+              <span
+                className={`flex h-[29px] w-[29px] items-center justify-center rounded-[9px] max-[450px]:h-[25px] max-[450px]:w-[25px] ${
+                  active
+                    ? "bg-[rgba(0,200,150,.085)] text-[#00C896]"
+                    : "bg-white/[0.025]"
+                }`}
+              >
                 <Icon name={item.icon} size={18} />
               </span>
 
-              <span className="type-label">{item.label}</span>
-              <span className="type-short">{item.id}</span>
+              <span className="text-[9px] font-semibold max-[680px]:text-[8px] max-[450px]:text-[7px]">
+                {item.label}
+              </span>
+              <span
+                className={`${MONO} text-[7px] tracking-[.08em] max-[450px]:hidden ${
+                  active ? "text-[#668278]" : "text-[#414C48]"
+                }`}
+              >
+                {item.id}
+              </span>
             </button>
           );
         })}
@@ -616,23 +655,13 @@ function URLForm({
         placeholder="https://yourwebsite.com"
         value={fields.url}
         aria-invalid={invalid}
-        onChange={(e) =>
-          onChange({
-            ...fields,
-            url: e.target.value,
-          })
-        }
+        onChange={(e) => onChange({ ...fields, url: e.target.value })}
       />
-
-      <div className="field-hint">
-        <span className={invalid ? "error-text" : ""}>
-          {invalid
-            ? "Enter a valid http:// or https:// URL."
-            : "Short URLs create cleaner, easier-to-scan QR codes."}
-        </span>
-
-        {!invalid && <span>HTTP / HTTPS</span>}
-      </div>
+      <FieldHint error={invalid} right={invalid ? undefined : "HTTP / HTTPS"}>
+        {invalid
+          ? "Enter a valid http:// or https:// URL."
+          : "Short URLs create cleaner, easier-to-scan QR codes."}
+      </FieldHint>
     </FormField>
   );
 }
@@ -654,23 +683,16 @@ function TextForm({
         maxLength={MAX_TEXT}
         placeholder="Write anything you want to encode..."
         value={fields.text}
-        onChange={(e) =>
-          onChange({
-            ...fields,
-            text: e.target.value,
-          })
-        }
+        onChange={(e) => onChange({ ...fields, text: e.target.value })}
       />
-
-      <div className="counter-row">
-        <span>Plain text QR</span>
-        <span>
-          {fields.text.length.toLocaleString()} / {MAX_TEXT}
-        </span>
-      </div>
-
-      <div className="progress-track">
-        <div className="progress-fill" style={{ width: `${progress}%` }} />
+      <FieldHint right={`${fields.text.length.toLocaleString()} / ${MAX_TEXT}`}>
+        Plain text QR
+      </FieldHint>
+      <div className="mt-[7px] h-0.5 overflow-hidden rounded-full bg-[#1B2421]">
+        <div
+          className="h-full rounded-[inherit] bg-[#00C896] shadow-[0_0_8px_rgba(0,200,150,.5)] transition-[width] duration-200"
+          style={{ width: `${progress}%` }}
+        />
       </div>
     </FormField>
   );
@@ -692,18 +714,9 @@ function PhoneForm({
         autoFocus
         placeholder="+91 98765 43210"
         value={fields.phone}
-        onChange={(e) =>
-          onChange({
-            ...fields,
-            phone: e.target.value,
-          })
-        }
+        onChange={(e) => onChange({ ...fields, phone: e.target.value })}
       />
-
-      <div className="field-hint">
-        <span>Scanning opens the device dialer.</span>
-        <span>TEL</span>
-      </div>
+      <FieldHint right="TEL">Scanning opens the device dialer.</FieldHint>
     </FormField>
   );
 }
@@ -720,10 +733,7 @@ function EmailForm({
   const update =
     (key: keyof QRFields) =>
     (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      onChange({
-        ...fields,
-        [key]: e.target.value,
-      });
+      onChange({ ...fields, [key]: e.target.value });
 
   return (
     <>
@@ -738,9 +748,8 @@ function EmailForm({
           aria-invalid={invalid}
           onChange={update("email")}
         />
-
         {invalid && (
-          <p className="error-text error-message">
+          <p className="mt-[7px] text-[10px] text-[#F87171]">
             Please enter a valid email address.
           </p>
         )}
@@ -776,10 +785,7 @@ function WiFiForm({
   onChange: (fields: QRFields) => void;
 }) {
   const update = (key: keyof QRFields) => (e: ChangeEvent<HTMLInputElement>) =>
-    onChange({
-      ...fields,
-      [key]: e.target.value,
-    });
+    onChange({ ...fields, [key]: e.target.value });
 
   return (
     <>
@@ -805,22 +811,20 @@ function WiFiForm({
       </FormField>
 
       <FormField label="Security">
-        <div className="segmented-control">
+        <div className="grid grid-cols-3 gap-1 rounded-[11px] border border-[#1D2724] bg-[#080D0C] p-1">
           {(["WPA", "WEP", "None"] as const).map((item) => {
             const active = fields.security === item;
-
             return (
               <button
                 key={item}
                 type="button"
-                className={active ? "active" : ""}
-                onClick={() =>
-                  onChange({
-                    ...fields,
-                    security: item,
-                  })
-                }
                 aria-pressed={active}
+                onClick={() => onChange({ ...fields, security: item })}
+                className={`${MONO} min-h-[35px] cursor-pointer rounded-lg border-0 text-[9px] transition ${
+                  active
+                    ? "bg-[#17201D] text-[#EAF2EE] shadow-[0_1px_3px_rgba(0,0,0,.25),inset_0_0_0_1px_#293832]"
+                    : "bg-transparent text-[#5E6A65] hover:text-[#D4DBD8]"
+                }`}
               >
                 {item}
               </button>
@@ -829,6 +833,44 @@ function WiFiForm({
         </div>
       </FormField>
     </>
+  );
+}
+
+function ColorPicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[#1D2724] bg-[#090E0D] p-[11px]">
+      <div className="mb-[9px] flex items-center justify-between gap-2">
+        <span className="text-[9px] text-[#68756F]">{label}</span>
+        <span className={`${MONO} text-[7px] text-[#414D48]`}>
+          {value.toUpperCase()}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={label}
+          className="h-[31px] w-[31px] shrink-0 cursor-pointer rounded-lg border border-[#2A3530] bg-[#0B100F] p-[3px] [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-[5px] [&::-webkit-color-swatch]:border-0"
+        />
+        <div
+          className="h-[17px] w-[17px] rounded-[5px] shadow-[inset_0_0_0_1px_rgba(0,0,0,.12)]"
+          style={{ background: value }}
+        />
+        <span className={`${MONO} text-[8px] text-[#7A8781]`}>
+          {value.toUpperCase()}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -858,7 +900,7 @@ function Customizer({
   const sliderProgress = ((size - 150) / 850) * 100;
 
   return (
-    <Panel className="customizer-panel">
+    <Panel className="p-[18px] max-[450px]:p-[13px]">
       <SectionHeader
         number="02"
         eyebrow="APPEARANCE"
@@ -866,19 +908,18 @@ function Customizer({
         description="Tune the visual style without compromising scan reliability."
       />
 
-      <div className="custom-section">
-        <div className="control-heading">
+      <div className="mb-5">
+        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
           <div>
-            <span className="control-title">Color theme</span>
-            <span className="control-subtitle">Quick presets</span>
+            <span className={CONTROL_TITLE}>Color theme</span>
+            <span className={CONTROL_SUB}>Quick presets</span>
           </div>
-          <span className="control-meta">8 STYLES</span>
+          <span className={CONTROL_META}>8 STYLES</span>
         </div>
 
-        <div className="preset-grid">
+        <div className="grid grid-cols-8 gap-[7px]">
           {PRESETS.map((item, index) => {
             const active = preset === index;
-
             return (
               <button
                 key={item.name}
@@ -886,17 +927,19 @@ function Customizer({
                 title={item.name}
                 aria-label={`Use ${item.name} theme`}
                 aria-pressed={active}
-                className={`preset ${active ? "active" : ""}`}
+                onClick={() => onPresetChange(index)}
                 style={
                   {
                     "--preset-fg": item.fg,
                     "--preset-bg": item.bg,
                   } as CSSProperties
                 }
-                onClick={() => onPresetChange(index)}
+                className={`relative aspect-square cursor-pointer overflow-hidden rounded-[11px] border border-white/[0.06] bg-[linear-gradient(135deg,var(--preset-fg)_50%,var(--preset-bg)_50%)] p-0 transition hover:scale-[1.055] ${
+                  active ? "shadow-[0_0_0_2px_#00C896,0_0_0_4px_#101615]" : ""
+                }`}
               >
                 {active && (
-                  <span className="preset-check">
+                  <span className="absolute inset-0 m-auto flex h-[19px] w-[19px] items-center justify-center rounded-full bg-[#00C896] text-[#04130E] shadow-[0_3px_10px_rgba(0,0,0,.35)]">
                     <Icon name="check" size={11} strokeWidth={2.5} />
                   </span>
                 )}
@@ -906,368 +949,97 @@ function Customizer({
         </div>
       </div>
 
-      <div className="color-grid">
+      <div className="mb-[19px] grid grid-cols-2 gap-[9px] max-[450px]:grid-cols-1">
         <ColorPicker label="QR color" value={fg} onChange={onFgChange} />
-
         <ColorPicker label="Background" value={bg} onChange={onBgChange} />
       </div>
 
-      <div className="divider" />
+      <div className={DIVIDER} />
 
-      <div className="custom-section">
-        <div className="control-heading">
+      <div className="mb-5">
+        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
           <div>
-            <span className="control-title">Output resolution</span>
-            <span className="control-subtitle">Higher is better for print</span>
+            <span className={CONTROL_TITLE}>Output resolution</span>
+            <span className={CONTROL_SUB}>Higher is better for print</span>
           </div>
-
-          <span className="value-pill">{size}px</span>
+          <span
+            className={`${MONO} rounded-lg border border-[rgba(0,200,150,.13)] bg-[rgba(0,200,150,.045)] px-2 py-1.5 text-[9px] text-[#00C896]`}
+          >
+            {size}px
+          </span>
         </div>
 
         <input
-          className="premium-range"
+          className={RANGE}
           type="range"
           min="150"
           max="1000"
           step="50"
           value={size}
           onChange={(e) => onSizeChange(Number(e.target.value))}
-          style={
-            {
-              "--range-progress": `${sliderProgress}%`,
-            } as CSSProperties
-          }
+          style={{ "--range-progress": `${sliderProgress}%` } as CSSProperties}
           aria-label="Output resolution"
         />
 
-        <div className="range-labels">
+        <div
+          className={`${MONO} mt-1.5 flex justify-between text-[7px] text-[#3F4A46]`}
+        >
           <span>150 px</span>
           <span>1000 px</span>
         </div>
       </div>
 
-      <div className="custom-section ecc-section">
-        <div className="control-heading">
+      <div>
+        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
           <div>
-            <span className="control-title">Error correction</span>
-            <span className="control-subtitle">Protects against damage</span>
+            <span className={CONTROL_TITLE}>Error correction</span>
+            <span className={CONTROL_SUB}>Protects against damage</span>
           </div>
-
-          <span className="control-meta">
+          <span className={CONTROL_META}>
             {ECC_LEVELS[ecc].recovery} RECOVERY
           </span>
         </div>
 
-        <div className="ecc-grid">
+        <div className="grid grid-cols-4 gap-[7px] max-[450px]:gap-[5px]">
           {(Object.keys(ECC_LEVELS) as ECCLevel[]).map((key) => {
             const item = ECC_LEVELS[key];
             const active = ecc === key;
-
             return (
               <button
                 key={key}
                 type="button"
-                className={`ecc-option ${active ? "active" : ""}`}
-                onClick={() => onEccChange(key)}
                 aria-pressed={active}
+                onClick={() => onEccChange(key)}
+                className={`relative flex min-h-[61px] cursor-pointer flex-col items-start justify-center rounded-[11px] border px-[7px] py-[9px] transition max-[450px]:min-h-14 ${
+                  active
+                    ? "border-[#344A42] bg-[rgba(0,200,150,.055)] text-[#F0F5F2] shadow-[inset_0_0_0_1px_rgba(0,200,150,.035)]"
+                    : "border-[#1D2724] bg-[#090E0D] text-[#65726D] hover:border-[#34403B] hover:text-[#C8D0CD]"
+                }`}
               >
-                <span className="ecc-letter">{key}</span>
-                <span className="ecc-name">{item.name}</span>
-                {active && <span className="ecc-dot" />}
+                <span className={`${MONO} text-xs font-bold`}>{key}</span>
+                <span
+                  className={`mt-[3px] text-[8px] ${
+                    active ? "text-[#6E8179]" : "text-[#4F5B56]"
+                  }`}
+                >
+                  {item.name}
+                </span>
+                {active && (
+                  <span className="absolute right-2 top-2 h-[5px] w-[5px] rounded-full bg-[#00C896] shadow-[0_0_8px_#00C896]" />
+                )}
               </button>
             );
           })}
         </div>
 
-        <div className="ecc-tip">
-          <Icon name="shield" size={15} />
+        <div className="mt-2.5 flex items-center gap-[7px] text-[9px] text-[#5E6E67]">
+          <span className="text-[#00C896]">
+            <Icon name="shield" size={15} />
+          </span>
           <span>{ECC_LEVELS[ecc].description}</span>
         </div>
       </div>
     </Panel>
-  );
-}
-
-function ColorPicker({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="color-picker">
-      <div className="color-picker-top">
-        <span>{label}</span>
-        <span className="color-value">{value.toUpperCase()}</span>
-      </div>
-
-      <div className="color-picker-bottom">
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={label}
-        />
-
-        <div className="color-preview" style={{ background: value }} />
-
-        <span className="color-code">{value.toUpperCase()}</span>
-      </div>
-    </div>
-  );
-}
-
-function QRPreview({
-  qrUrl,
-  bg,
-  size,
-  scanning,
-  aspect,
-}: {
-  qrUrl: string | null;
-  bg: string;
-  size: number;
-  scanning: boolean;
-  aspect: number;
-}) {
-  const [imageError, setImageError] = useState(false);
-
-  useEffect(() => {
-    setImageError(false);
-  }, [qrUrl]);
-
-  const hasQR = Boolean(qrUrl) && !imageError;
-  const displaySize = Math.min(size, 340);
-
-  return (
-    <div className={`preview-canvas ${hasQR ? "has-qr" : ""}`}>
-      <div className="canvas-grid" />
-
-      <div className="canvas-top-glow" />
-
-      {hasQR && qrUrl ? (
-        <div className="preview-content">
-          <div
-            className="qr-frame"
-            style={
-              {
-                "--qr-bg": bg,
-              } as CSSProperties
-            }
-          >
-            <div className="corner corner-tl" />
-            <div className="corner corner-tr" />
-            <div className="corner corner-bl" />
-            <div className="corner corner-br" />
-
-            <div className="qr-image-wrap">
-              {scanning && <div className="scan-line" />}
-
-              <img
-                key={qrUrl}
-                src={qrUrl}
-                alt="Generated QR code preview"
-                width={displaySize}
-                height={Math.round(displaySize * aspect)}
-                className="qr-image"
-                onError={() => setImageError(true)}
-              />
-            </div>
-          </div>
-
-          <div className="live-badge">
-            <span className="live-dot" />
-            LIVE PREVIEW
-          </div>
-        </div>
-      ) : (
-        <div className="empty-preview">
-          <div className="empty-qr">
-            <div className="empty-ring" />
-            <QRLogo size={58} accent="#394642" />
-            <div className="empty-spark">
-              <Icon name="sparkles" size={14} />
-            </div>
-          </div>
-
-          <h3>Your QR appears here</h3>
-          <p>
-            Choose a format and enter your content to generate a live preview.
-          </p>
-
-          <div className="empty-hint">
-            <Icon name="bolt" size={13} />
-            Updates automatically as you type
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatusBar({
-  content,
-  size,
-  ecc,
-}: {
-  content: string;
-  size: number;
-  ecc: ECCLevel;
-}) {
-  const preview = content.length > 80 ? `${content.slice(0, 80)}…` : content;
-
-  return (
-    <div className="status-bar">
-      <div className="status-ready">
-        <span className="status-pulse" />
-        READY
-      </div>
-
-      <span className="status-separator">/</span>
-
-      <span className="status-meta">
-        {size}px · ECC {ecc}
-      </span>
-
-      <span className="status-separator">/</span>
-
-      <span className="status-content" title={content}>
-        {preview}
-      </span>
-    </div>
-  );
-}
-
-function ActionBar({
-  disabled,
-  downloading,
-  copied,
-  saved,
-  autoSave,
-  onDownloadPng,
-  onDownloadSvg,
-  onCopyImage,
-  onSave,
-  onAutoSaveChange,
-}: {
-  disabled: boolean;
-  downloading: boolean;
-  copied: boolean;
-  saved: boolean;
-  autoSave: boolean;
-  onDownloadPng: () => void;
-  onDownloadSvg: () => void;
-  onCopyImage: () => void;
-  onSave: () => void;
-  onAutoSaveChange: (value: boolean) => void;
-}) {
-  return (
-    <>
-      <div className="action-area">
-        <button
-          type="button"
-          className="primary-action"
-          disabled={disabled || downloading}
-          onClick={onDownloadPng}
-        >
-          <span>
-            <Icon name="download" size={16} />
-          </span>
-          {downloading ? "Preparing file..." : "Download PNG"}
-          {!downloading && <Icon name="arrow" size={15} strokeWidth={2} />}
-        </button>
-
-        <button
-          type="button"
-          className="secondary-action"
-          disabled={disabled || downloading}
-          onClick={onDownloadSvg}
-        >
-          <Icon name="qr" size={16} />
-          SVG
-        </button>
-
-        <button
-          type="button"
-          className={`copy-action ${copied ? "copied" : ""}`}
-          disabled={disabled}
-          onClick={onCopyImage}
-          title="Copy QR image"
-          aria-label="Copy QR image"
-        >
-          <Icon name={copied ? "check" : "copy"} size={17} />
-        </button>
-      </div>
-
-      <div className="save-row">
-        <button
-          type="button"
-          className={`save-action ${saved ? "saved" : ""}`}
-          disabled={disabled}
-          onClick={onSave}
-        >
-          <Icon name={saved ? "check" : "save"} size={15} />
-          {saved ? "Saved to history" : "Save to history"}
-        </button>
-
-        <label className="autosave-toggle">
-          <input
-            type="checkbox"
-            checked={autoSave}
-            onChange={(e) => onAutoSaveChange(e.target.checked)}
-          />
-          <span className="autosave-box">
-            {autoSave && <Icon name="check" size={11} strokeWidth={3} />}
-          </span>
-          Auto-save on download
-        </label>
-      </div>
-    </>
-  );
-}
-
-function QualityCard({ ecc }: { ecc: ECCLevel }) {
-  return (
-    <div className="quality-card">
-      <div className="quality-icon">
-        <Icon name="sparkles" size={17} />
-      </div>
-
-      <div className="quality-copy">
-        <div className="quality-title">
-          <span>PRO QUALITY</span>
-          <span className="quality-line" />
-        </div>
-
-        <p>
-          ECC <strong>{ecc}</strong> is active. Use High or Maximum for printed
-          QR codes and logo overlays.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  text,
-}: {
-  icon: "bolt" | "shield" | "printer";
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="feature-card">
-      <div className="feature-icon">
-        <Icon name={icon} size={15} />
-      </div>
-      <div className="feature-title">{title}</div>
-      <div className="feature-text">{text}</div>
-    </div>
   );
 }
 
@@ -1308,7 +1080,9 @@ function BrandingPanel({
   const titleProgress = ((titleScale - 3) / 7) * 100;
 
   return (
-    <Panel className="branding-panel">
+    // FIX: this panel previously had no horizontal padding (padding: 0 0 6px),
+    // which pushed the content against the edges and clipped the header/input.
+    <Panel className="p-[18px] max-[450px]:p-[13px]">
       <SectionHeader
         number="03"
         eyebrow="BRANDING"
@@ -1316,32 +1090,39 @@ function BrandingPanel({
         description="Add your logo in the center and a title under the QR."
       />
 
-      <div className="custom-section">
-        <div className="control-heading">
+      <div className="mb-5">
+        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
           <div>
-            <span className="control-title">Logo</span>
-            <span className="control-subtitle">Shown in the QR center</span>
+            <span className={CONTROL_TITLE}>Logo</span>
+            <span className={CONTROL_SUB}>Shown in the QR center</span>
           </div>
-          {logo && <span className="control-meta">{logoScale}% SIZE</span>}
+          {logo && <span className={CONTROL_META}>{logoScale}% SIZE</span>}
         </div>
 
-        <div className="logo-row">
-          <div className="logo-thumb">
+        <div className="mb-3 mt-1 flex items-center gap-3">
+          <div className="flex h-[58px] w-[58px] flex-none items-center justify-center overflow-hidden rounded-[14px] border border-dashed border-[#2F3B36] bg-[#0B100F] text-[#53605C]">
             {logo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logo} alt="Selected logo" />
+              <img
+                src={logo}
+                alt="Selected logo"
+                className="h-full w-full object-contain"
+              />
             ) : (
               <Icon name="image" size={20} />
             )}
           </div>
 
-          <div className="logo-actions">
-            <label className="logo-upload">
+          <div className="flex flex-wrap gap-2">
+            <label
+              className={`${BTN} border-[rgba(0,200,150,.28)] bg-[rgba(0,200,150,.06)] text-[#00C896]`}
+            >
               <Icon name="upload" size={15} />
               {logo ? "Change logo" : "Upload logo"}
               <input
                 type="file"
                 accept="image/*"
+                className="hidden"
                 onChange={(e: ChangeEvent<HTMLInputElement>) => {
                   const file = e.target.files?.[0];
                   if (file) onLogoFile(file);
@@ -1353,7 +1134,7 @@ function BrandingPanel({
             {logo && (
               <button
                 type="button"
-                className="logo-remove"
+                className={`${BTN} hover:border-[rgba(255,90,90,.4)] hover:text-[#FF8A8A]`}
                 onClick={onLogoRemove}
               >
                 <Icon name="trash" size={14} />
@@ -1363,12 +1144,12 @@ function BrandingPanel({
           </div>
         </div>
 
-        {logoError && <div className="inline-error">{logoError}</div>}
+        {logoError && <div className={INLINE_ERROR}>{logoError}</div>}
 
         {logo && (
           <>
             <input
-              className="premium-range"
+              className={RANGE}
               type="range"
               min="10"
               max="30"
@@ -1381,39 +1162,37 @@ function BrandingPanel({
               aria-label="Logo size"
             />
 
-            <label className="autosave-toggle plate-toggle">
-              <input
-                type="checkbox"
-                checked={logoPlate}
-                onChange={(e) => onLogoPlateChange(e.target.checked)}
-              />
-              <span className="autosave-box">
-                {logoPlate && <Icon name="check" size={11} strokeWidth={3} />}
-              </span>
+            <Checkbox
+              checked={logoPlate}
+              onChange={onLogoPlateChange}
+              className="mt-3"
+            >
               Background plate behind logo
-            </label>
+            </Checkbox>
 
             {ecc !== "H" && ecc !== "Q" && (
-              <div className="inline-warning">
-                <Icon name="shield" size={14} />
-                Use High or Maximum error correction so the QR still scans
-                with a logo.
+              <div className={INLINE_WARNING}>
+                <span className="mt-px">
+                  <Icon name="shield" size={14} />
+                </span>
+                Use High or Maximum error correction so the QR still scans with
+                a logo.
               </div>
             )}
           </>
         )}
       </div>
 
-      <div className="divider" />
+      <div className={DIVIDER} />
 
-      <div className="custom-section">
-        <div className="control-heading">
+      <div className="mb-5">
+        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
           <div>
-            <span className="control-title">Title</span>
-            <span className="control-subtitle">Printed below the QR</span>
+            <span className={CONTROL_TITLE}>Title</span>
+            <span className={CONTROL_SUB}>Printed below the QR</span>
           </div>
           {title.trim() && (
-            <span className="control-meta">
+            <span className={CONTROL_META}>
               {title.length}/{MAX_TITLE}
             </span>
           )}
@@ -1430,44 +1209,53 @@ function BrandingPanel({
 
         {title.trim() && (
           <input
-            className="premium-range"
+            className={RANGE}
             type="range"
             min="3"
             max="10"
             step="0.5"
             value={titleScale}
             onChange={(e) => onTitleScaleChange(Number(e.target.value))}
-            style={
-              { "--range-progress": `${titleProgress}%` } as CSSProperties
-            }
+            style={{ "--range-progress": `${titleProgress}%` } as CSSProperties}
             aria-label="Title size"
           />
         )}
       </div>
 
-      <div className="divider" />
+      <div className={DIVIDER} />
 
-      <div className="custom-section">
-        <div className="control-heading">
+      <div>
+        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
           <div>
-            <span className="control-title">Dot style</span>
-            <span className="control-subtitle">Shape of the QR modules</span>
+            <span className={CONTROL_TITLE}>Dot style</span>
+            <span className={CONTROL_SUB}>Shape of the QR modules</span>
           </div>
         </div>
 
-        <div className="style-grid">
+        <div className="mt-1 grid grid-cols-3 gap-2">
           {DOT_STYLES.map((item) => {
             const active = dotStyle === item.id;
-
+            const shape =
+              item.id === "rounded"
+                ? "[&>i]:rounded-[3px]"
+                : item.id === "dots"
+                  ? "[&>i]:rounded-full"
+                  : "";
             return (
               <button
                 key={item.id}
                 type="button"
-                className={`style-option ${active ? "active" : ""}`}
                 aria-pressed={active}
                 onClick={() => onDotStyleChange(item.id)}
+                className={`flex cursor-pointer flex-col items-center gap-2 rounded-[13px] border px-1.5 pb-2.5 pt-[11px] text-[11px] font-semibold transition ${
+                  active
+                    ? "border-[rgba(0,200,150,.5)] bg-[rgba(0,200,150,.07)] text-[#00C896]"
+                    : "border-[#1D2724] bg-[#0B100F] text-[#82908B] hover:border-[#33423C] hover:text-[#EDF3F0]"
+                }`}
               >
-                <span className={`style-sample sample-${item.id}`}>
+                <span
+                  className={`grid grid-cols-[repeat(2,9px)] gap-[3px] ${shape} [&>i]:h-[9px] [&>i]:w-[9px] [&>i]:bg-current`}
+                >
                   <i />
                   <i />
                   <i />
@@ -1480,6 +1268,281 @@ function BrandingPanel({
         </div>
       </div>
     </Panel>
+  );
+}
+
+function QRPreview({
+  qrUrl,
+  bg,
+  size,
+  scanning,
+  aspect,
+}: {
+  qrUrl: string | null;
+  bg: string;
+  size: number;
+  scanning: boolean;
+  aspect: number;
+}) {
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [qrUrl]);
+
+  const hasQR = Boolean(qrUrl) && !imageError;
+  const displaySize = Math.min(size, 340);
+
+  return (
+    <div
+      className={`relative flex min-h-[530px] items-center justify-center overflow-hidden max-[1050px]:min-h-[490px] max-[680px]:min-h-[400px] max-[450px]:min-h-[350px] ${
+        hasQR
+          ? "bg-[#080D0C] bg-[radial-gradient(circle_at_center,rgba(0,200,150,.045),transparent_23rem)]"
+          : "bg-[#080D0C]"
+      }`}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.018)_1px,transparent_1px)] bg-[size:24px_24px] opacity-65 [mask-image:linear-gradient(to_bottom,black,transparent_85%)]" />
+
+      <div className="pointer-events-none absolute left-1/2 top-[-220px] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-[rgba(0,200,150,.055)] blur-[80px]" />
+
+      {hasQR && qrUrl ? (
+        <div className="relative z-[2] flex flex-col items-center">
+          <div
+            className="relative animate-[qrAppear_.4s_cubic-bezier(.16,1,.3,1)] rounded-[21px] p-[17px] shadow-[0_0_0_1px_rgba(255,255,255,.09),0_35px_100px_rgba(0,0,0,.58),0_10px_30px_rgba(0,0,0,.32)] motion-reduce:animate-none max-[680px]:rounded-[17px] max-[680px]:p-3"
+            style={{ background: bg }}
+          >
+            <div className="pointer-events-none absolute -left-[7px] -top-[7px] z-[3] h-6 w-6 rounded-tl-[5px] border-l-2 border-t-2 border-[#00C896]" />
+            <div className="pointer-events-none absolute -right-[7px] -top-[7px] z-[3] h-6 w-6 rounded-tr-[5px] border-r-2 border-t-2 border-[#00C896]" />
+            <div className="pointer-events-none absolute -bottom-[7px] -left-[7px] z-[3] h-6 w-6 rounded-bl-[5px] border-b-2 border-l-2 border-[#00C896]" />
+            <div className="pointer-events-none absolute -bottom-[7px] -right-[7px] z-[3] h-6 w-6 rounded-br-[5px] border-b-2 border-r-2 border-[#00C896]" />
+
+            <div className="relative overflow-hidden rounded leading-[0]">
+              {scanning && (
+                <div className="absolute inset-x-0 top-0 z-[5] h-0.5 animate-[scan_.75s_ease-out_forwards] bg-[linear-gradient(90deg,transparent,#00C896,transparent)] shadow-[0_0_10px_#00C896,0_0_28px_rgba(0,200,150,.5)] motion-reduce:animate-none" />
+              )}
+
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={qrUrl}
+                src={qrUrl}
+                alt="Generated QR code preview"
+                width={displaySize}
+                height={Math.round(displaySize * aspect)}
+                className="block h-auto max-w-[min(340px,62vw)] rounded-sm max-[1050px]:max-w-[min(300px,50vw)] max-[680px]:max-w-[260px] max-[450px]:max-w-[225px]"
+                onError={() => setImageError(true)}
+              />
+            </div>
+          </div>
+
+          <div
+            className={`${MONO} mt-[18px] flex items-center gap-[7px] rounded-full border border-[rgba(0,200,150,.13)] bg-[rgba(0,200,150,.045)] px-2.5 py-[7px] text-[7px] tracking-[.1em] text-[#69A997]`}
+          >
+            <span className="h-[5px] w-[5px] rounded-full bg-[#00C896] shadow-[0_0_9px_#00C896]" />
+            LIVE PREVIEW
+          </div>
+        </div>
+      ) : (
+        <div className="relative z-[2] max-w-[310px] p-[30px] text-center">
+          <div className="relative mx-auto mb-[22px] flex h-28 w-28 items-center justify-center rounded-[27px] border border-[#202B27] bg-[#0D1311] shadow-[0_25px_55px_rgba(0,0,0,.25),inset_0_1px_0_rgba(255,255,255,.025)]">
+            <div className="absolute inset-[13px] rounded-[18px] border border-dashed border-[#2B3833]" />
+            <QRLogo size={58} accent="#394642" />
+            <div className="absolute -right-[7px] -top-[7px] flex h-[29px] w-[29px] items-center justify-center rounded-[9px] border border-[#293630] bg-[#111815] text-[#00C896]">
+              <Icon name="sparkles" size={14} />
+            </div>
+          </div>
+
+          <h3 className="m-0 text-[13px] font-semibold text-[#C8D1CD]">
+            Your QR appears here
+          </h3>
+          <p className="mx-auto mt-[7px] text-[10px] leading-[1.65] text-[#56635E]">
+            Choose a format and enter your content to generate a live preview.
+          </p>
+
+          <div className="mt-[17px] inline-flex items-center gap-1.5 rounded-lg border border-[#1C2723] bg-white/[0.012] px-[9px] py-[7px] text-[8px] text-[#4F5C56]">
+            <span className="text-[#00C896]">
+              <Icon name="bolt" size={13} />
+            </span>
+            Updates automatically as you type
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusBar({
+  content,
+  size,
+  ecc,
+}: {
+  content: string;
+  size: number;
+  ecc: ECCLevel;
+}) {
+  const preview = content.length > 80 ? `${content.slice(0, 80)}…` : content;
+
+  return (
+    <div
+      className={`${MONO} flex min-h-[39px] items-center gap-[9px] border-t border-[#1B2421] bg-[#0A0F0E] px-3.5 text-[8px] text-[#52605A]`}
+    >
+      <div className="flex items-center gap-1.5 font-semibold text-[#789089]">
+        <span className="h-[5px] w-[5px] rounded-full bg-[#00C896] shadow-[0_0_0_3px_rgba(0,200,150,.07)]" />
+        READY
+      </div>
+
+      <span className="text-[#29342F] max-[450px]:hidden">/</span>
+
+      <span className="shrink-0 max-[450px]:hidden">
+        {size}px · ECC {ecc}
+      </span>
+
+      <span className="text-[#29342F]">/</span>
+
+      <span className="truncate text-[#46534D]" title={content}>
+        {preview}
+      </span>
+    </div>
+  );
+}
+
+function ActionBar({
+  disabled,
+  downloading,
+  copied,
+  saved,
+  autoSave,
+  onDownloadPng,
+  onDownloadSvg,
+  onCopyImage,
+  onSave,
+  onAutoSaveChange,
+}: {
+  disabled: boolean;
+  downloading: boolean;
+  copied: boolean;
+  saved: boolean;
+  autoSave: boolean;
+  onDownloadPng: () => void;
+  onDownloadSvg: () => void;
+  onCopyImage: () => void;
+  onSave: () => void;
+  onAutoSaveChange: (value: boolean) => void;
+}) {
+  const actionBase =
+    "flex min-h-[43px] cursor-pointer items-center justify-center gap-2 rounded-xl transition disabled:cursor-not-allowed disabled:opacity-30";
+  const outlineAction =
+    "border border-[#26312D] bg-[#0B100F] text-[10px] font-semibold text-[#7A8781] hover:enabled:border-[#394640] hover:enabled:bg-[#101714] hover:enabled:text-[#EDF3F0]";
+
+  return (
+    <>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_44px] gap-[7px] p-[13px] max-[450px]:grid-cols-[minmax(0,1fr)_42px]">
+        <button
+          type="button"
+          disabled={disabled || downloading}
+          onClick={onDownloadPng}
+          className={`${actionBase} border-0 bg-[linear-gradient(135deg,#00E0A8,#00C896)] px-[15px] text-[11px] font-bold text-[#03130E] shadow-[0_10px_30px_rgba(0,200,150,.12),inset_0_1px_0_rgba(255,255,255,.2)] hover:enabled:-translate-y-px hover:enabled:shadow-[0_14px_35px_rgba(0,200,150,.18),inset_0_1px_0_rgba(255,255,255,.2)] max-[450px]:col-start-1 max-[450px]:row-start-1`}
+        >
+          <span className="flex h-[25px] w-[25px] items-center justify-center rounded-[7px] bg-black/[0.08]">
+            <Icon name="download" size={16} />
+          </span>
+          {downloading ? "Preparing file..." : "Download PNG"}
+          {!downloading && <Icon name="arrow" size={15} strokeWidth={2} />}
+        </button>
+
+        <button
+          type="button"
+          disabled={disabled || downloading}
+          onClick={onDownloadSvg}
+          className={`${actionBase} ${outlineAction} px-[13px] max-[450px]:col-span-full max-[450px]:row-start-2`}
+        >
+          <Icon name="qr" size={16} />
+          SVG
+        </button>
+
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onCopyImage}
+          title="Copy QR image"
+          aria-label="Copy QR image"
+          className={`${actionBase} max-[450px]:col-start-2 max-[450px]:row-start-1 ${
+            copied
+              ? "border border-[rgba(0,200,150,.25)] bg-[rgba(0,200,150,.06)] text-[#00C896]"
+              : outlineAction
+          }`}
+        >
+          <Icon name={copied ? "check" : "copy"} size={17} />
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2.5 px-[13px] pb-3.5">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onSave}
+          className={`${BTN} ${
+            saved
+              ? "border-[rgba(0,200,150,.3)] bg-[rgba(0,200,150,.07)] text-[#00C896]"
+              : ""
+          }`}
+        >
+          <Icon name={saved ? "check" : "save"} size={15} />
+          {saved ? "Saved to history" : "Save to history"}
+        </button>
+
+        <Checkbox checked={autoSave} onChange={onAutoSaveChange}>
+          Auto-save on download
+        </Checkbox>
+      </div>
+    </>
+  );
+}
+
+function QualityCard({ ecc }: { ecc: ECCLevel }) {
+  return (
+    <div className="mt-3 flex gap-[11px] rounded-2xl border border-[rgba(0,200,150,.12)] bg-[linear-gradient(135deg,rgba(0,200,150,.055),rgba(0,200,150,.018))] p-3.5">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[rgba(0,200,150,.075)] text-[#00C896]">
+        <Icon name="sparkles" size={17} />
+      </div>
+
+      <div className="min-w-0">
+        <div
+          className={`${MONO} flex items-center gap-2 text-[8px] font-bold tracking-[.12em] text-[#00C896]`}
+        >
+          <span>PRO QUALITY</span>
+          <span className="h-px w-[25px] bg-[rgba(0,200,150,.22)]" />
+        </div>
+
+        <p className="mt-[5px] text-[9px] leading-[1.55] text-[#678078]">
+          ECC <strong className="text-[#A4C4BA]">{ecc}</strong> is active. Use
+          High or Maximum for printed QR codes and logo overlays.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function FeatureCard({
+  icon,
+  title,
+  text,
+}: {
+  icon: "bolt" | "shield" | "printer";
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-[13px] border border-[#1C2622] bg-[#0C1110] p-3 max-[680px]:p-[9px]">
+      <div className="flex h-[25px] w-[25px] items-center justify-center rounded-lg bg-white/[0.025] text-[#66756E]">
+        <Icon name={icon} size={15} />
+      </div>
+      <div className="mt-[9px] text-[9px] font-semibold text-[#AAB5B0] max-[680px]:text-[8px]">
+        {title}
+      </div>
+      <div className="mt-[3px] text-[8px] text-[#4D5954] max-[680px]:text-[7px]">
+        {text}
+      </div>
+    </div>
   );
 }
 
@@ -1529,19 +1592,23 @@ function HistoryPanel({
   );
 
   return (
-    <section className="premium-panel history-panel p-6">
-      <div className="history-head">
-        <SectionHeader
-          number="04"
-          eyebrow="HISTORY"
-          title="Saved QR codes"
-          description="Stored only in this browser. Click a card to open it again."
-        />
+    <Panel className="mt-4 p-[18px]">
+      <div className="flex items-start justify-between gap-3.5">
+        <div className="flex-1">
+          <SectionHeader
+            number="04"
+            eyebrow="HISTORY"
+            title="Saved QR codes"
+            description="Stored only in this browser. Click a card to open it again."
+          />
+        </div>
 
         {items.length > 0 && (
           <button
             type="button"
-            className={`history-clear ${confirmClear ? "confirm" : ""}`}
+            className={`${BTN} flex-none ${
+              confirmClear ? "border-[rgba(255,90,90,.4)] text-[#FF8A8A]" : ""
+            }`}
             onClick={() => {
               if (confirmClear) {
                 onClear();
@@ -1558,45 +1625,61 @@ function HistoryPanel({
         )}
       </div>
 
-      {notice && <div className="inline-error history-notice">{notice}</div>}
+      {notice && <div className={INLINE_ERROR}>{notice}</div>}
 
       {items.length === 0 ? (
-        <div className="history-empty">
+        <div className="flex flex-col items-center gap-1 px-[18px] pb-2.5 pt-[26px] text-center text-[#53605C]">
           <Icon name="history" size={22} />
-          <p>No saved QR codes yet.</p>
-          <span>Use “Save to history” under the preview.</span>
+          <p className="mt-1.5 text-[13px] font-semibold text-[#82908B]">
+            No saved QR codes yet.
+          </p>
+          <span className="text-[11px]">
+            Use “Save to history” under the preview.
+          </span>
         </div>
       ) : (
-        <div className="history-grid">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
           {cards.map(({ item, data, thumb }) => (
-            <div key={item.id} className="history-card">
+            <div
+              key={item.id}
+              className="group relative rounded-[15px] border border-[#1D2724] bg-[#0B100F] transition hover:-translate-y-0.5 hover:border-[rgba(0,200,150,.4)]"
+            >
               <button
                 type="button"
-                className="history-open"
+                className="flex w-full cursor-pointer flex-col gap-1 border-0 bg-transparent p-[9px] text-left text-inherit"
                 onClick={() => onLoad(item)}
                 title="Open this QR"
               >
-                <span className="history-thumb" style={{ background: item.bg }}>
+                <span
+                  className="mb-1 flex aspect-square items-center justify-center overflow-hidden rounded-[9px] text-[#53605C]"
+                  style={{ background: item.bg }}
+                >
                   {thumb ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={thumb.dataUrl} alt="Saved QR preview" />
+                    <img
+                      src={thumb.dataUrl}
+                      alt="Saved QR preview"
+                      className="h-full w-full object-contain"
+                    />
                   ) : (
                     <Icon name="qr" size={24} />
                   )}
                 </span>
 
-                <span className="history-title">
+                <span className="truncate text-[11.5px] font-semibold text-[#E4ECE8]">
                   {item.title.trim() || data || "Untitled"}
                 </span>
 
-                <span className="history-meta">
+                <span
+                  className={`${MONO} text-[9px] tracking-[.04em] text-[#5F6C67]`}
+                >
                   {item.type} · {new Date(item.createdAt).toLocaleDateString()}
                 </span>
               </button>
 
               <button
                 type="button"
-                className="history-delete"
+                className="absolute right-3.5 top-3.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-lg border border-black/[0.18] bg-[rgba(10,14,13,.72)] text-white opacity-0 transition hover:bg-[rgba(220,60,60,.9)] focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                 onClick={() => onDelete(item.id)}
                 aria-label="Delete from history"
                 title="Delete"
@@ -1607,7 +1690,7 @@ function HistoryPanel({
           ))}
         </div>
       )}
-    </section>
+    </Panel>
   );
 }
 
@@ -1645,30 +1728,19 @@ export default function QRGenerator() {
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const invalid = useMemo(() => {
-    if (type === "URL") {
-      return Boolean(fields.url) && !isValidURL(fields.url);
-    }
-
-    if (type === "Email") {
+    if (type === "URL") return Boolean(fields.url) && !isValidURL(fields.url);
+    if (type === "Email")
       return Boolean(fields.email) && !isValidEmail(fields.email);
-    }
-
     return false;
   }, [type, fields]);
 
   const triggerScan = useCallback(() => {
     setScanning(false);
-
-    if (scanTimer.current) {
-      clearTimeout(scanTimer.current);
-    }
+    if (scanTimer.current) clearTimeout(scanTimer.current);
 
     scanTimer.current = setTimeout(() => {
       setScanning(true);
-
-      scanTimer.current = setTimeout(() => {
-        setScanning(false);
-      }, 750);
+      scanTimer.current = setTimeout(() => setScanning(false), 750);
     }, 30);
   }, []);
 
@@ -1676,10 +1748,7 @@ export default function QRGenerator() {
     const timer = setTimeout(() => {
       const data = buildQRData(type, fields);
       setContent(data);
-
-      if (data && !invalid) {
-        triggerScan();
-      }
+      if (data && !invalid) triggerScan();
     }, 250);
 
     return () => clearTimeout(timer);
@@ -1692,17 +1761,9 @@ export default function QRGenerator() {
 
   useEffect(() => {
     return () => {
-      if (scanTimer.current) {
-        clearTimeout(scanTimer.current);
-      }
-
-      if (copyTimer.current) {
-        clearTimeout(copyTimer.current);
-      }
-
-      if (savedTimer.current) {
-        clearTimeout(savedTimer.current);
-      }
+      if (scanTimer.current) clearTimeout(scanTimer.current);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
     };
   }, []);
 
@@ -1762,9 +1823,7 @@ export default function QRGenerator() {
 
   const handlePreset = useCallback((index: number) => {
     const selected = PRESETS[index];
-
     if (!selected) return;
-
     setPreset(index);
     setFg(selected.fg);
     setBg(selected.bg);
@@ -1792,7 +1851,6 @@ export default function QRGenerator() {
 
         if (raw) {
           const parsed = JSON.parse(raw);
-
           if (Array.isArray(parsed)) {
             historyRef.current = parsed as HistoryItem[];
             setHistory(parsed as HistoryItem[]);
@@ -1810,9 +1868,7 @@ export default function QRGenerator() {
 
   const flashSaved = useCallback(() => {
     setSaved(true);
-
     if (savedTimer.current) clearTimeout(savedTimer.current);
-
     savedTimer.current = setTimeout(() => setSaved(false), 2000);
   }, []);
 
@@ -1850,7 +1906,6 @@ export default function QRGenerator() {
     };
 
     commitHistory([item, ...rest].slice(0, MAX_HISTORY));
-
     flashSaved();
   }, [
     content,
@@ -1903,7 +1958,6 @@ export default function QRGenerator() {
 
   const handleAutoSaveChange = useCallback((value: boolean) => {
     setAutoSave(value);
-
     try {
       localStorage.setItem(AUTOSAVE_KEY, value ? "1" : "0");
     } catch {
@@ -1915,7 +1969,6 @@ export default function QRGenerator() {
   const handleLogoFile = useCallback(async (file: File) => {
     try {
       const dataUrl = await readLogo(file);
-
       setLogo(dataUrl);
       setLogoError("");
       setEcc("H");
@@ -1979,2121 +2032,71 @@ export default function QRGenerator() {
       ]);
 
       setCopied(true);
-
-      if (copyTimer.current) {
-        clearTimeout(copyTimer.current);
-      }
-
-      copyTimer.current = setTimeout(() => {
-        setCopied(false);
-      }, 2200);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 2200);
     } catch {
       setCopied(false);
     }
   }, [qr]);
 
   return (
-    <main className="qr-app">
+    <main className="min-h-screen bg-[#060908] bg-[radial-gradient(circle_at_50%_-10%,rgba(0,200,150,.115),transparent_31rem),radial-gradient(circle_at_95%_40%,rgba(0,200,150,.045),transparent_26rem)] font-[Inter,ui-sans-serif,system-ui,-apple-system,'Segoe_UI',sans-serif] text-[#F3F7F5] [&_*]:box-border">
+      {/* Only keyframes live here; Tailwind has no built-in equivalent. */}
       <style>{`
-        :root {
-          --qr-accent: ${ACCENT};
-          --qr-accent-bright: ${ACCENT_BRIGHT};
-        }
-
-        .qr-app {
-          min-height: 100vh;
-          color: ${COLORS.text};
-          background:
-            radial-gradient(
-              circle at 50% -10%,
-              rgba(0, 200, 150, .115),
-              transparent 31rem
-            ),
-            radial-gradient(
-              circle at 95% 40%,
-              rgba(0, 200, 150, .045),
-              transparent 26rem
-            ),
-            ${COLORS.bg};
-          font-family:
-            Inter,
-            ui-sans-serif,
-            system-ui,
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            sans-serif;
-        }
-
-        .qr-app *,
-        .qr-app *::before,
-        .qr-app *::after {
-          box-sizing: border-box;
-        }
-
-        .qr-app button,
-        .qr-app input,
-        .qr-app textarea {
-          font: inherit;
-        }
-
-        .qr-app button {
-          -webkit-tap-highlight-color: transparent;
-        }
-
-        .qr-shell {
-          width: min(1220px, calc(100% - 32px));
-          margin: 0 auto;
-        }
-
-        .qr-header {
-          padding: 28px 0 24px;
-        }
-
-        .brand-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-        }
-
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 13px;
-        }
-
-        .brand-mark {
-          width: 46px;
-          height: 46px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 15px;
-          border: 1px solid #293530;
-          background:
-            linear-gradient(145deg, #151D1A, #0A0F0D);
-          box-shadow:
-            0 15px 35px rgba(0,0,0,.28),
-            inset 0 1px 0 rgba(255,255,255,.04);
-        }
-
-        .brand-title-row {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-        }
-
-        .brand-title {
-          margin: 0;
-          color: #F4F8F6;
-          font-family:
-            "DM Mono",
-            "SFMono-Regular",
-            Consolas,
-            monospace;
-          font-size: 16px;
-          font-weight: 650;
-          letter-spacing: -.03em;
-        }
-
-        .pro-pill {
-          padding: 4px 7px;
-          border-radius: 6px;
-          color: #03130E;
-          background: ${ACCENT};
-          font-family:
-            "DM Mono",
-            monospace;
-          font-size: 8px;
-          font-weight: 800;
-          letter-spacing: .12em;
-          box-shadow: 0 0 20px rgba(0,200,150,.16);
-        }
-
-        .brand-subtitle {
-          margin: 4px 0 0;
-          color: #5F6C67;
-          font-size: 11px;
-        }
-
-        .system-status {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 9px 12px;
-          border: 1px solid #1D2724;
-          border-radius: 11px;
-          background: rgba(12,17,16,.78);
-          color: #68756F;
-          font-family: "DM Mono", monospace;
-          font-size: 9px;
-          letter-spacing: .08em;
-          text-transform: uppercase;
-        }
-
-        .system-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: ${ACCENT};
-          box-shadow: 0 0 10px ${ACCENT};
-        }
-
-        .workspace {
-          display: grid;
-          grid-template-columns: 410px minmax(0, 1fr);
-          gap: 16px;
-          align-items: start;
-        }
-
-        .left-column,
-        .right-column {
-          min-width: 0;
-        }
-
-        .right-column {
-          position: sticky;
-          top: 18px;
-        }
-
-        .premium-panel {
-          overflow: hidden;
-          border: 1px solid ${COLORS.border};
-          border-radius: 20px;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(255,255,255,.035),
-              rgba(255,255,255,.008)
-            ),
-            ${COLORS.surface};
-          box-shadow:
-            0 1px 1px rgba(0,0,0,.35),
-            0 20px 65px rgba(0,0,0,.18);
-        }
-
-        .type-panel {
-          padding: 14px;
-          margin-bottom: 12px;
-        }
-
-        .type-topline {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          padding: 3px 4px 12px;
-        }
-
-        .micro-label,
-        .format-count,
-        .section-eyebrow,
-        .control-meta,
-        .field-label,
-        .quality-title,
-        .status-bar,
-        .color-value,
-        .range-labels,
-        .color-code {
-          font-family:
-            "DM Mono",
-            "SFMono-Regular",
-            Consolas,
-            monospace;
-        }
-
-        .micro-label {
-          display: block;
-          margin-bottom: 3px;
-          color: #56625E;
-          font-size: 8px;
-          font-weight: 600;
-          letter-spacing: .17em;
-        }
-
-        .type-topline h2 {
-          margin: 0;
-          color: #D8E0DD;
-          font-size: 13px;
-          font-weight: 650;
-          letter-spacing: -.015em;
-        }
-
-        .format-count {
-          color: #3F4A46;
-          font-size: 8px;
-          letter-spacing: .1em;
-        }
-
-        .type-grid {
-          display: grid;
-          grid-template-columns: repeat(5, 1fr);
-          gap: 6px;
-        }
-
-        .type-button {
-          position: relative;
-          min-height: 78px;
-          padding: 10px 4px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          border: 1px solid #1D2724;
-          border-radius: 13px;
-          background: #0A0F0E;
-          color: #66736E;
-          cursor: pointer;
-          transition:
-            transform .18s ease,
-            border-color .18s ease,
-            background .18s ease,
-            color .18s ease,
-            box-shadow .18s ease;
-        }
-
-        .type-button:hover {
-          transform: translateY(-1px);
-          border-color: #34403B;
-          color: #C5CECA;
-          background: #0E1412;
-        }
-
-        .type-button.active {
-          border-color: #33443E;
-          background:
-            linear-gradient(
-              145deg,
-              rgba(0,200,150,.075),
-              rgba(255,255,255,.018)
-            ),
-            #111816;
-          color: #F1F6F4;
-          box-shadow:
-            inset 0 0 0 1px rgba(0,200,150,.055),
-            0 8px 24px rgba(0,0,0,.16);
-        }
-
-        .active-dot {
-          position: absolute;
-          top: 7px;
-          right: 7px;
-          width: 5px;
-          height: 5px;
-          border-radius: 50%;
-          background: ${ACCENT};
-          box-shadow: 0 0 10px ${ACCENT};
-        }
-
-        .type-icon {
-          width: 29px;
-          height: 29px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 9px;
-          background: rgba(255,255,255,.025);
-        }
-
-        .type-button.active .type-icon {
-          color: ${ACCENT};
-          background: rgba(0,200,150,.085);
-        }
-
-        .type-label {
-          font-size: 9px;
-          font-weight: 650;
-        }
-
-        .type-short {
-          color: #414C48;
-          font-family: "DM Mono", monospace;
-          font-size: 7px;
-          letter-spacing: .08em;
-        }
-
-        .type-button.active .type-short {
-          color: #668278;
-        }
-
-        .content-panel {
-          padding: 18px;
-          margin-bottom: 12px;
-        }
-
-        .section-header {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 15px;
-          margin-bottom: 18px;
-        }
-
-        .section-heading {
-          min-width: 0;
-        }
-
-        .section-eyebrow {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          margin-bottom: 5px;
-          color: #56635E;
-          font-size: 8px;
-          font-weight: 600;
-          letter-spacing: .14em;
-        }
-
-        .section-number {
-          color: ${ACCENT};
-        }
-
-        .section-heading h2 {
-          margin: 0;
-          color: #EAF0ED;
-          font-size: 16px;
-          font-weight: 680;
-          letter-spacing: -.025em;
-        }
-
-        .section-heading p {
-          max-width: 310px;
-          margin: 5px 0 0;
-          color: #68756F;
-          font-size: 11px;
-          line-height: 1.55;
-        }
-
-        .char-badge {
-          padding: 6px 8px;
-          border: 1px solid #1D2724;
-          border-radius: 8px;
-          color: #53605C;
-          background: #0A0F0E;
-          font-family: "DM Mono", monospace;
-          font-size: 8px;
-          white-space: nowrap;
-        }
-
-        .form-field {
-          margin-bottom: 15px;
-        }
-
-        .form-field:last-child {
-          margin-bottom: 0;
-        }
-
-        .field-label {
-          display: block;
-          margin-bottom: 7px;
-          color: #71807A;
-          font-size: 8px;
-          font-weight: 650;
-          letter-spacing: .12em;
-          text-transform: uppercase;
-        }
-
-        .required {
-          margin-left: 3px;
-          color: ${ACCENT};
-        }
-
-        .premium-input {
-          width: 100%;
-          min-height: 43px;
-          padding: 11px 13px;
-          outline: none;
-          border: 1px solid #202B27;
-          border-radius: 12px;
-          background: #090E0D;
-          color: #EDF3F0;
-          font-size: 12px;
-          line-height: 1.5;
-          transition:
-            border-color .2s ease,
-            background .2s ease,
-            box-shadow .2s ease;
-        }
-
-        textarea.premium-input {
-          min-height: 130px;
-          resize: vertical;
-        }
-
-        .premium-input::placeholder {
-          color: #3E4945;
-        }
-
-        .premium-input:hover {
-          border-color: #2E3A35;
-        }
-
-        .premium-input:focus {
-          border-color: rgba(0,200,150,.75);
-          background: #0B1110;
-          box-shadow:
-            0 0 0 3px rgba(0,200,150,.075),
-            0 8px 25px rgba(0,0,0,.12);
-        }
-
-        .premium-input[aria-invalid="true"] {
-          border-color: rgba(248,113,113,.7);
-        }
-
-        .field-hint,
-        .counter-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          margin-top: 7px;
-          color: #4F5B56;
-          font-size: 9px;
-          line-height: 1.4;
-        }
-
-        .field-hint > span:last-child,
-        .counter-row > span:last-child {
-          font-family: "DM Mono", monospace;
-          color: #46524D;
-        }
-
-        .error-text {
-          color: #F87171 !important;
-        }
-
-        .error-message {
-          margin: 7px 0 0;
-          font-size: 10px;
-        }
-
-        .progress-track {
-          height: 2px;
-          margin-top: 7px;
-          overflow: hidden;
-          border-radius: 99px;
-          background: #1B2421;
-        }
-
-        .progress-fill {
-          height: 100%;
-          border-radius: inherit;
-          background: ${ACCENT};
-          box-shadow: 0 0 8px rgba(0,200,150,.5);
-          transition: width .2s ease;
-        }
-
-        .content-ready {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-top: 15px;
-          padding: 10px;
-          border: 1px solid rgba(0,200,150,.13);
-          border-radius: 12px;
-          background: rgba(0,200,150,.035);
-        }
-
-        .content-ready-icon {
-          width: 28px;
-          height: 28px;
-          display: flex;
-          flex-shrink: 0;
-          align-items: center;
-          justify-content: center;
-          border-radius: 9px;
-          color: ${ACCENT};
-          background: rgba(0,200,150,.08);
-        }
-
-        .content-ready-title {
-          margin: 0;
-          color: #B8C5C0;
-          font-size: 10px;
-          font-weight: 650;
-        }
-
-        .content-ready-value {
-          max-width: 280px;
-          margin: 3px 0 0;
-          overflow: hidden;
-          color: #50605A;
-          font-family: "DM Mono", monospace;
-          font-size: 8px;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .customizer-panel {
-          padding: 18px;
-        }
-
-        .custom-section {
-          margin-bottom: 20px;
-        }
-
-        .control-heading {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          margin-bottom: 10px;
-        }
-
-        .control-title {
-          display: block;
-          color: #B6C0BC;
-          font-size: 11px;
-          font-weight: 600;
-        }
-
-        .control-subtitle {
-          display: block;
-          margin-top: 3px;
-          color: #4F5C57;
-          font-size: 9px;
-        }
-
-        .control-meta {
-          color: #48544F;
-          font-size: 7px;
-          letter-spacing: .1em;
-          white-space: nowrap;
-        }
-
-        .preset-grid {
-          display: grid;
-          grid-template-columns: repeat(8, 1fr);
-          gap: 7px;
-        }
-
-        .preset {
-          position: relative;
-          aspect-ratio: 1;
-          padding: 0;
-          overflow: hidden;
-          border: 1px solid rgba(255,255,255,.06);
-          border-radius: 11px;
-          background:
-            linear-gradient(
-              135deg,
-              var(--preset-fg) 50%,
-              var(--preset-bg) 50%
-            );
-          cursor: pointer;
-          transition:
-            transform .18s ease,
-            box-shadow .18s ease;
-        }
-
-        .preset:hover {
-          transform: scale(1.055);
-        }
-
-        .preset.active {
-          box-shadow:
-            0 0 0 2px ${ACCENT},
-            0 0 0 4px #101615;
-        }
-
-        .preset-check {
-          position: absolute;
-          inset: 0;
-          width: 19px;
-          height: 19px;
-          margin: auto;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 50%;
-          color: #04130E;
-          background: ${ACCENT};
-          box-shadow: 0 3px 10px rgba(0,0,0,.35);
-        }
-
-        .color-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 9px;
-          margin-bottom: 19px;
-        }
-
-        .color-picker {
-          padding: 11px;
-          border: 1px solid #1D2724;
-          border-radius: 12px;
-          background: #090E0D;
-        }
-
-        .color-picker-top,
-        .color-picker-bottom {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 8px;
-        }
-
-        .color-picker-top {
-          margin-bottom: 9px;
-        }
-
-        .color-picker-top > span:first-child {
-          color: #68756F;
-          font-size: 9px;
-        }
-
-        .color-value {
-          color: #414D48;
-          font-size: 7px;
-        }
-
-        .color-picker-bottom {
-          justify-content: flex-start;
-        }
-
-        .color-picker input[type="color"] {
-          width: 31px;
-          height: 31px;
-          flex-shrink: 0;
-          padding: 3px;
-          border: 1px solid #2A3530;
-          border-radius: 8px;
-          background: #0B100F;
-          cursor: pointer;
-        }
-
-        .color-picker input[type="color"]::-webkit-color-swatch-wrapper {
-          padding: 0;
-        }
-
-        .color-picker input[type="color"]::-webkit-color-swatch {
-          border: 0;
-          border-radius: 5px;
-        }
-
-        .color-preview {
-          width: 17px;
-          height: 17px;
-          border-radius: 5px;
-          box-shadow: inset 0 0 0 1px rgba(0,0,0,.12);
-        }
-
-        .color-code {
-          color: #7A8781;
-          font-size: 8px;
-        }
-
-        .divider {
-          height: 1px;
-          margin: 0 0 19px;
-          background: #1B2421;
-        }
-
-        .value-pill {
-          padding: 6px 8px;
-          border: 1px solid rgba(0,200,150,.13);
-          border-radius: 8px;
-          color: ${ACCENT};
-          background: rgba(0,200,150,.045);
-          font-family: "DM Mono", monospace;
-          font-size: 9px;
-        }
-
-        .premium-range {
-          width: 100%;
-          height: 5px;
-          margin: 7px 0 0;
-          appearance: none;
-          outline: none;
-          border-radius: 99px;
-          background:
-            linear-gradient(
-              to right,
-              ${ACCENT} 0,
-              ${ACCENT} var(--range-progress),
-              #242E2A var(--range-progress),
-              #242E2A 100%
-            );
-          cursor: pointer;
-        }
-
-        .premium-range::-webkit-slider-thumb {
-          width: 17px;
-          height: 17px;
-          appearance: none;
-          border: 3px solid #101615;
-          border-radius: 50%;
-          background: ${ACCENT};
-          box-shadow:
-            0 0 0 1px rgba(0,200,150,.3),
-            0 3px 9px rgba(0,0,0,.45);
-        }
-
-        .premium-range::-moz-range-thumb {
-          width: 12px;
-          height: 12px;
-          border: 3px solid #101615;
-          border-radius: 50%;
-          background: ${ACCENT};
-        }
-
-        .range-labels {
-          display: flex;
-          justify-content: space-between;
-          margin-top: 6px;
-          color: #3F4A46;
-          font-size: 7px;
-        }
-
-        .ecc-section {
-          margin-bottom: 0;
-        }
-
-        .ecc-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 7px;
-        }
-
-        .ecc-option {
-          position: relative;
-          min-height: 61px;
-          padding: 9px 7px;
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          justify-content: center;
-          border: 1px solid #1D2724;
-          border-radius: 11px;
-          background: #090E0D;
-          color: #65726D;
-          cursor: pointer;
-          transition:
-            border-color .18s ease,
-            background .18s ease,
-            color .18s ease;
-        }
-
-        .ecc-option:hover {
-          border-color: #34403B;
-          color: #C8D0CD;
-        }
-
-        .ecc-option.active {
-          border-color: #344A42;
-          color: #F0F5F2;
-          background: rgba(0,200,150,.055);
-          box-shadow: inset 0 0 0 1px rgba(0,200,150,.035);
-        }
-
-        .ecc-letter {
-          color: inherit;
-          font-family: "DM Mono", monospace;
-          font-size: 12px;
-          font-weight: 700;
-        }
-
-        .ecc-name {
-          margin-top: 3px;
-          color: #4F5B56;
-          font-size: 8px;
-        }
-
-        .ecc-option.active .ecc-name {
-          color: #6E8179;
-        }
-
-        .ecc-dot {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          width: 5px;
-          height: 5px;
-          border-radius: 50%;
-          background: ${ACCENT};
-          box-shadow: 0 0 8px ${ACCENT};
-        }
-
-        .ecc-tip {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          margin-top: 10px;
-          color: #5E6E67;
-          font-size: 9px;
-        }
-
-        .ecc-tip svg {
-          color: ${ACCENT};
-        }
-
-        .segmented-control {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 4px;
-          padding: 4px;
-          border: 1px solid #1D2724;
-          border-radius: 11px;
-          background: #080D0C;
-        }
-
-        .segmented-control button {
-          min-height: 35px;
-          border: 0;
-          border-radius: 8px;
-          color: #5E6A65;
-          background: transparent;
-          font-family: "DM Mono", monospace;
-          font-size: 9px;
-          cursor: pointer;
-          transition: all .18s ease;
-        }
-
-        .segmented-control button:hover {
-          color: #D4DBD8;
-        }
-
-        .segmented-control button.active {
-          color: #EAF2EE;
-          background: #17201D;
-          box-shadow:
-            0 1px 3px rgba(0,0,0,.25),
-            inset 0 0 0 1px #293832;
-        }
-
-        .preview-panel {
-          overflow: hidden;
-        }
-
-        .preview-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 15px;
-          padding: 15px 17px;
-          border-bottom: 1px solid #1B2421;
-          background: rgba(14,20,18,.82);
-        }
-
-        .preview-heading {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .preview-index {
-          width: 30px;
-          height: 30px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid #24302B;
-          border-radius: 9px;
-          color: ${ACCENT};
-          background: rgba(0,200,150,.045);
-          font-family: "DM Mono", monospace;
-          font-size: 8px;
-        }
-
-        .preview-label {
-          color: #596660;
-          font-family: "DM Mono", monospace;
-          font-size: 7px;
-          letter-spacing: .15em;
-        }
-
-        .preview-title {
-          margin: 2px 0 0;
-          color: #C9D2CE;
-          font-size: 11px;
-          font-weight: 600;
-        }
-
-        .preview-badges {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .preview-badge {
-          padding: 6px 8px;
-          border: 1px solid #242E2A;
-          border-radius: 8px;
-          color: #68746F;
-          background: #111715;
-          font-family: "DM Mono", monospace;
-          font-size: 7px;
-          letter-spacing: .05em;
-        }
-
-        .preview-badge.accent {
-          border-color: rgba(0,200,150,.12);
-          color: #67AF9D;
-          background: rgba(0,200,150,.045);
-        }
-
-        .preview-canvas {
-          position: relative;
-          min-height: 530px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          overflow: hidden;
-          background: #080D0C;
-        }
-
-        .preview-canvas.has-qr {
-          background:
-            radial-gradient(
-              circle at center,
-              rgba(0,200,150,.045),
-              transparent 23rem
-            ),
-            #080D0C;
-        }
-
-        .canvas-grid {
-          position: absolute;
-          inset: 0;
-          opacity: .65;
-          background-image:
-            linear-gradient(
-              rgba(255,255,255,.018) 1px,
-              transparent 1px
-            ),
-            linear-gradient(
-              90deg,
-              rgba(255,255,255,.018) 1px,
-              transparent 1px
-            );
-          background-size: 24px 24px;
-          mask-image: linear-gradient(
-            to bottom,
-            black,
-            transparent 85%
-          );
-        }
-
-        .canvas-top-glow {
-          position: absolute;
-          width: 420px;
-          height: 420px;
-          top: -220px;
-          left: 50%;
-          transform: translateX(-50%);
-          border-radius: 50%;
-          background: rgba(0,200,150,.055);
-          filter: blur(80px);
-          pointer-events: none;
-        }
-
-        .preview-content {
-          position: relative;
-          z-index: 2;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-
-        .qr-frame {
-          position: relative;
-          padding: 17px;
-          border-radius: 21px;
-          background: var(--qr-bg, white);
-          box-shadow:
-            0 0 0 1px rgba(255,255,255,.09),
-            0 35px 100px rgba(0,0,0,.58),
-            0 10px 30px rgba(0,0,0,.32);
-          animation: qrAppear .4s cubic-bezier(.16,1,.3,1);
-        }
-
-        .qr-image-wrap {
-          position: relative;
-          overflow: hidden;
-          border-radius: 4px;
-          line-height: 0;
-        }
-
-        .qr-image {
-          display: block;
-          max-width: min(340px, 62vw);
-          height: auto;
-          border-radius: 2px;
-        }
-
-        .corner {
-          position: absolute;
-          z-index: 3;
-          width: 24px;
-          height: 24px;
-          border-color: ${ACCENT};
-          pointer-events: none;
-        }
-
-        .corner-tl {
-          top: -7px;
-          left: -7px;
-          border-top: 2px solid;
-          border-left: 2px solid;
-          border-radius: 5px 0 0 0;
-        }
-
-        .corner-tr {
-          top: -7px;
-          right: -7px;
-          border-top: 2px solid;
-          border-right: 2px solid;
-          border-radius: 0 5px 0 0;
-        }
-
-        .corner-bl {
-          bottom: -7px;
-          left: -7px;
-          border-bottom: 2px solid;
-          border-left: 2px solid;
-          border-radius: 0 0 0 5px;
-        }
-
-        .corner-br {
-          right: -7px;
-          bottom: -7px;
-          border-right: 2px solid;
-          border-bottom: 2px solid;
-          border-radius: 0 0 5px 0;
-        }
-
-        .scan-line {
-          position: absolute;
-          z-index: 5;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 2px;
-          background: linear-gradient(
-            90deg,
-            transparent,
-            ${ACCENT},
-            transparent
-          );
-          box-shadow:
-            0 0 10px ${ACCENT},
-            0 0 28px rgba(0,200,150,.5);
-          animation: scan .75s ease-out forwards;
-        }
-
-        .live-badge {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          margin-top: 18px;
-          padding: 7px 10px;
-          border: 1px solid rgba(0,200,150,.13);
-          border-radius: 99px;
-          color: #69A997;
-          background: rgba(0,200,150,.045);
-          font-family: "DM Mono", monospace;
-          font-size: 7px;
-          letter-spacing: .1em;
-        }
-
-        .live-dot {
-          width: 5px;
-          height: 5px;
-          border-radius: 50%;
-          background: ${ACCENT};
-          box-shadow: 0 0 9px ${ACCENT};
-        }
-
-        .empty-preview {
-          position: relative;
-          z-index: 2;
-          max-width: 310px;
-          padding: 30px;
-          text-align: center;
-        }
-
-        .empty-qr {
-          position: relative;
-          width: 112px;
-          height: 112px;
-          margin: 0 auto 22px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid #202B27;
-          border-radius: 27px;
-          background: #0D1311;
-          box-shadow:
-            0 25px 55px rgba(0,0,0,.25),
-            inset 0 1px 0 rgba(255,255,255,.025);
-        }
-
-        .empty-ring {
-          position: absolute;
-          inset: 13px;
-          border: 1px dashed #2B3833;
-          border-radius: 18px;
-        }
-
-        .empty-spark {
-          position: absolute;
-          top: -7px;
-          right: -7px;
-          width: 29px;
-          height: 29px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid #293630;
-          border-radius: 9px;
-          color: ${ACCENT};
-          background: #111815;
-        }
-
-        .empty-preview h3 {
-          margin: 0;
-          color: #C8D1CD;
-          font-size: 13px;
-          font-weight: 650;
-        }
-
-        .empty-preview p {
-          margin: 7px auto 0;
-          color: #56635E;
-          font-size: 10px;
-          line-height: 1.65;
-        }
-
-        .empty-hint {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          margin-top: 17px;
-          padding: 7px 9px;
-          border: 1px solid #1C2723;
-          border-radius: 8px;
-          color: #4F5C56;
-          background: rgba(255,255,255,.012);
-          font-size: 8px;
-        }
-
-        .empty-hint svg {
-          color: ${ACCENT};
-        }
-
-        .status-bar {
-          min-height: 39px;
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          padding: 0 14px;
-          border-top: 1px solid #1B2421;
-          background: #0A0F0E;
-          color: #52605A;
-          font-size: 8px;
-        }
-
-        .status-ready {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: #789089;
-          font-weight: 600;
-        }
-
-        .status-pulse {
-          width: 5px;
-          height: 5px;
-          border-radius: 50%;
-          background: ${ACCENT};
-          box-shadow: 0 0 0 3px rgba(0,200,150,.07);
-        }
-
-        .status-separator {
-          color: #29342F;
-        }
-
-        .status-meta {
-          flex-shrink: 0;
-        }
-
-        .status-content {
-          overflow: hidden;
-          color: #46534D;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .action-area {
-          display: grid;
-          grid-template-columns: minmax(0,1fr) auto 44px;
-          gap: 7px;
-          padding: 13px;
-        }
-
-        .primary-action,
-        .secondary-action,
-        .copy-action {
-          min-height: 43px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          border-radius: 12px;
-          cursor: pointer;
-          transition:
-            transform .18s ease,
-            background .18s ease,
-            border-color .18s ease,
-            box-shadow .18s ease,
-            color .18s ease;
-        }
-
-        .primary-action {
-          padding: 0 15px;
-          border: 0;
-          color: #03130E;
-          background:
-            linear-gradient(
-              135deg,
-              ${ACCENT_BRIGHT},
-              ${ACCENT}
-            );
-          font-size: 11px;
-          font-weight: 750;
-          box-shadow:
-            0 10px 30px rgba(0,200,150,.12),
-            inset 0 1px 0 rgba(255,255,255,.2);
-        }
-
-        .primary-action:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow:
-            0 14px 35px rgba(0,200,150,.18),
-            inset 0 1px 0 rgba(255,255,255,.2);
-        }
-
-        .primary-action span {
-          width: 25px;
-          height: 25px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 7px;
-          background: rgba(0,0,0,.08);
-        }
-
-        .secondary-action,
-        .copy-action {
-          border: 1px solid #26312D;
-          color: #7A8781;
-          background: #0B100F;
-          font-size: 10px;
-          font-weight: 600;
-        }
-
-        .secondary-action {
-          padding: 0 13px;
-        }
-
-        .secondary-action:hover:not(:disabled),
-        .copy-action:hover:not(:disabled) {
-          border-color: #394640;
-          color: #EDF3F0;
-          background: #101714;
-        }
-
-        .copy-action.copied {
-          border-color: rgba(0,200,150,.25);
-          color: ${ACCENT};
-          background: rgba(0,200,150,.06);
-        }
-
-        .primary-action:disabled,
-        .secondary-action:disabled,
-        .copy-action:disabled {
-          opacity: .3;
-          cursor: not-allowed;
-          transform: none;
-        }
-
-        .quality-card {
-          display: flex;
-          gap: 11px;
-          margin-top: 12px;
-          padding: 14px;
-          border: 1px solid rgba(0,200,150,.12);
-          border-radius: 16px;
-          background:
-            linear-gradient(
-              135deg,
-              rgba(0,200,150,.055),
-              rgba(0,200,150,.018)
-            );
-        }
-
-        .quality-icon {
-          width: 32px;
-          height: 32px;
-          flex-shrink: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 10px;
-          color: ${ACCENT};
-          background: rgba(0,200,150,.075);
-        }
-
-        .quality-copy {
-          min-width: 0;
-        }
-
-        .quality-title {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: ${ACCENT};
-          font-size: 8px;
-          font-weight: 700;
-          letter-spacing: .12em;
-        }
-
-        .quality-line {
-          width: 25px;
-          height: 1px;
-          background: rgba(0,200,150,.22);
-        }
-
-        .quality-copy p {
-          margin: 5px 0 0;
-          color: #678078;
-          font-size: 9px;
-          line-height: 1.55;
-        }
-
-        .quality-copy strong {
-          color: #A4C4BA;
-        }
-
-        .feature-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 8px;
-          margin-top: 12px;
-        }
-
-        .feature-card {
-          min-width: 0;
-          padding: 12px;
-          border: 1px solid #1C2622;
-          border-radius: 13px;
-          background: #0C1110;
-        }
-
-        .feature-icon {
-          width: 25px;
-          height: 25px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 8px;
-          color: #66756E;
-          background: rgba(255,255,255,.025);
-        }
-
-        .feature-title {
-          margin-top: 9px;
-          color: #AAB5B0;
-          font-size: 9px;
-          font-weight: 650;
-        }
-
-        .feature-text {
-          margin-top: 3px;
-          color: #4D5954;
-          font-size: 8px;
-        }
-
-        .qr-footer {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
-          padding: 24px 0 18px;
-          color: #38433F;
-          font-size: 8px;
-        }
-
-        .footer-brand {
-          font-family: "DM Mono", monospace;
-          letter-spacing: .08em;
-        }
-
         @keyframes qrAppear {
-          from {
-            opacity: 0;
-            transform: scale(.9) translateY(8px);
-          }
-          70% {
-            opacity: 1;
-            transform: scale(1.015) translateY(0);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
+          from { opacity: 0; transform: scale(.9) translateY(8px); }
+          70% { opacity: 1; transform: scale(1.015) translateY(0); }
+          to { opacity: 1; transform: scale(1); }
         }
-
         @keyframes scan {
-          from {
-            top: 0;
-            opacity: 0;
-          }
-          12% {
-            opacity: 1;
-          }
-          to {
-            top: 100%;
-            opacity: 0;
-          }
-        }
-
-        @media (max-width: 1050px) {
-          .workspace {
-            grid-template-columns: 360px minmax(0, 1fr);
-          }
-
-          .preview-canvas {
-            min-height: 490px;
-          }
-
-          .qr-image {
-            max-width: min(300px, 50vw);
-          }
-        }
-
-        @media (max-width: 900px) {
-          .right-column {
-            position: static;
-          }
-
-          .workspace {
-            grid-template-columns: 1fr;
-          }
-
-          .left-column {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            align-items: start;
-          }
-
-          .type-panel,
-          .content-panel,
-          .customizer-panel {
-            margin-bottom: 0;
-          }
-
-          .type-panel {
-            grid-column: 1 / -1;
-          }
-        }
-
-        @media (max-width: 680px) {
-          .qr-shell {
-            width: min(100% - 20px, 1220px);
-          }
-
-          .qr-header {
-            padding: 18px 0 16px;
-          }
-
-          .system-status {
-            display: none;
-          }
-
-          .brand-mark {
-            width: 42px;
-            height: 42px;
-          }
-
-          .left-column {
-            display: block;
-          }
-
-          .type-panel,
-          .content-panel,
-          .customizer-panel {
-            margin-bottom: 10px;
-          }
-
-          .type-grid {
-            gap: 5px;
-          }
-
-          .type-button {
-            min-height: 70px;
-          }
-
-          .type-label {
-            font-size: 8px;
-          }
-
-          .preview-header {
-            padding: 12px;
-          }
-
-          .preview-badges .preview-badge:first-child {
-            display: none;
-          }
-
-          .preview-canvas {
-            min-height: 400px;
-          }
-
-          .qr-frame {
-            padding: 12px;
-            border-radius: 17px;
-          }
-
-          .qr-image {
-            max-width: 260px;
-          }
-
-          .feature-grid {
-            gap: 5px;
-          }
-
-          .feature-card {
-            padding: 9px;
-          }
-
-          .feature-title {
-            font-size: 8px;
-          }
-
-          .feature-text {
-            font-size: 7px;
-          }
-
-          .qr-footer {
-            flex-direction: column;
-            text-align: center;
-            padding-bottom: 15px;
-          }
-        }
-
-        @media (max-width: 450px) {
-          .brand-title {
-            font-size: 14px;
-          }
-
-          .brand-subtitle {
-            font-size: 9px;
-          }
-
-          .pro-pill {
-            font-size: 7px;
-          }
-
-          .type-panel,
-          .content-panel,
-          .customizer-panel {
-            padding: 13px;
-          }
-
-          .type-button {
-            min-height: 64px;
-            border-radius: 10px;
-          }
-
-          .type-icon {
-            width: 25px;
-            height: 25px;
-          }
-
-          .type-label {
-            font-size: 7px;
-          }
-
-          .type-short {
-            display: none;
-          }
-
-          .section-heading h2 {
-            font-size: 14px;
-          }
-
-          .color-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .ecc-grid {
-            gap: 5px;
-          }
-
-          .ecc-option {
-            min-height: 56px;
-          }
-
-          .action-area {
-            grid-template-columns: minmax(0,1fr) 42px;
-          }
-
-          .secondary-action {
-            grid-column: 1 / -1;
-            grid-row: 2;
-          }
-
-          .copy-action {
-            grid-column: 2;
-            grid-row: 1;
-          }
-
-          .primary-action {
-            grid-column: 1;
-            grid-row: 1;
-          }
-
-          .status-meta,
-          .status-separator {
-            display: none;
-          }
-
-          .preview-canvas {
-            min-height: 350px;
-          }
-
-          .qr-image {
-            max-width: 225px;
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .qr-app *,
-          .qr-app *::before,
-          .qr-app *::after {
-            scroll-behavior: auto !important;
-            animation-duration: .01ms !important;
-            animation-iteration-count: 1 !important;
-            transition-duration: .01ms !important;
-          }
-        }
-
-        /* ---------- Branding / History / Save additions ---------- */
-        .branding-panel {
-          padding: 0 0 6px;
-          margin-top: 12px;
-        }
-
-        .logo-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin: 4px 0 12px;
-        }
-
-        .logo-thumb {
-          width: 58px;
-          height: 58px;
-          flex: none;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          overflow: hidden;
-          border: 1px dashed #2F3B36;
-          border-radius: 14px;
-          color: #53605C;
-          background: #0B100F;
-        }
-
-        .logo-thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-        }
-
-        .logo-actions {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .logo-upload,
-        .logo-remove,
-        .save-action,
-        .history-clear {
-          min-height: 38px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 7px;
-          padding: 0 13px;
-          border: 1px solid #26312D;
-          border-radius: 11px;
-          color: #9AA7A1;
-          background: #0B100F;
-          font-size: 11px;
-          font-weight: 650;
-          cursor: pointer;
-          transition: border-color .18s ease, color .18s ease, background .18s ease;
-        }
-
-        .logo-upload input {
-          display: none;
-        }
-
-        .logo-upload {
-          color: ${ACCENT};
-          border-color: rgba(0,200,150,.28);
-          background: rgba(0,200,150,.06);
-        }
-
-        .logo-upload:hover,
-        .logo-remove:hover,
-        .save-action:hover:not(:disabled),
-        .history-clear:hover {
-          border-color: #394640;
-          color: #EDF3F0;
-          background: #101714;
-        }
-
-        .logo-remove:hover,
-        .history-clear.confirm {
-          border-color: rgba(255,90,90,.4);
-          color: #FF8A8A;
-        }
-
-        .inline-error,
-        .inline-warning {
-          display: flex;
-          align-items: flex-start;
-          gap: 8px;
-          margin: 8px 0;
-          padding: 9px 11px;
-          border-radius: 10px;
-          font-size: 11px;
-          line-height: 1.45;
-        }
-
-        .inline-error {
-          border: 1px solid rgba(255,90,90,.25);
-          color: #FF9C9C;
-          background: rgba(255,90,90,.06);
-        }
-
-        .inline-warning {
-          border: 1px solid rgba(255,190,70,.25);
-          color: #F2C46B;
-          background: rgba(255,190,70,.06);
-        }
-
-        .inline-warning svg {
-          flex: none;
-          margin-top: 1px;
-        }
-
-        .qr-error {
-          margin: 0 13px 4px;
-        }
-
-        .plate-toggle {
-          margin-top: 12px;
-        }
-
-        .style-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 8px;
-          margin-top: 4px;
-        }
-
-        .style-option {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 8px;
-          padding: 11px 6px 10px;
-          border: 1px solid #1D2724;
-          border-radius: 13px;
-          color: #82908B;
-          background: #0B100F;
-          font-size: 11px;
-          font-weight: 650;
-          cursor: pointer;
-          transition: border-color .18s ease, color .18s ease, background .18s ease;
-        }
-
-        .style-option:hover {
-          border-color: #33423C;
-          color: #EDF3F0;
-        }
-
-        .style-option.active {
-          border-color: rgba(0,200,150,.5);
-          color: ${ACCENT};
-          background: rgba(0,200,150,.07);
-        }
-
-        .style-sample {
-          display: grid;
-          grid-template-columns: repeat(2, 9px);
-          gap: 3px;
-        }
-
-        .style-sample i {
-          width: 9px;
-          height: 9px;
-          background: currentColor;
-        }
-
-        .sample-rounded i {
-          border-radius: 3px;
-        }
-
-        .sample-dots i {
-          border-radius: 50%;
-        }
-
-        .save-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 10px;
-          padding: 0 13px 14px;
-        }
-
-        .save-action.saved {
-          border-color: rgba(0,200,150,.3);
-          color: ${ACCENT};
-          background: rgba(0,200,150,.07);
-        }
-
-        .save-action:disabled {
-          opacity: .3;
-          cursor: not-allowed;
-        }
-
-        .autosave-toggle {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          color: #82908B;
-          font-size: 11px;
-          cursor: pointer;
-          user-select: none;
-        }
-
-        .autosave-toggle input {
-          position: absolute;
-          opacity: 0;
-          pointer-events: none;
-        }
-
-        .autosave-box {
-          width: 17px;
-          height: 17px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid #33423C;
-          border-radius: 5px;
-          color: #03130E;
-          background: #0B100F;
-        }
-
-        .autosave-toggle input:checked + .autosave-box {
-          border-color: ${ACCENT};
-          background: ${ACCENT};
-        }
-
-        .autosave-toggle input:focus-visible + .autosave-box {
-          outline: 2px solid ${ACCENT};
-          outline-offset: 2px;
-        }
-
-        .history-panel {
-          margin-top: 16px;
-          padding-bottom: 20px;
-        }
-
-        .history-head {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 14px;
-          padding-right: 18px;
-        }
-
-        .history-head .section-header {
-          flex: 1;
-        }
-
-        .history-head .history-clear {
-          margin-top: 18px;
-          flex: none;
-        }
-
-        .history-notice {
-          margin: 0 18px 8px;
-        }
-
-        .history-empty {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-          padding: 26px 18px 10px;
-          color: #53605C;
-          text-align: center;
-        }
-
-        .history-empty p {
-          margin: 6px 0 0;
-          color: #82908B;
-          font-size: 13px;
-          font-weight: 650;
-        }
-
-        .history-empty span {
-          font-size: 11px;
-        }
-
-        .history-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-          gap: 12px;
-          padding: 4px 18px 0;
-        }
-
-        .history-card {
-          position: relative;
-          border: 1px solid #1D2724;
-          border-radius: 15px;
-          background: #0B100F;
-          transition: border-color .18s ease, transform .18s ease;
-        }
-
-        .history-card:hover {
-          border-color: rgba(0,200,150,.4);
-          transform: translateY(-2px);
-        }
-
-        .history-open {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          width: 100%;
-          padding: 9px;
-          border: 0;
-          color: inherit;
-          background: transparent;
-          text-align: left;
-          cursor: pointer;
-        }
-
-        .history-thumb {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          aspect-ratio: 1 / 1;
-          overflow: hidden;
-          margin-bottom: 4px;
-          border-radius: 9px;
-          color: #53605C;
-        }
-
-        .history-thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-        }
-
-        .history-title {
-          overflow: hidden;
-          color: #E4ECE8;
-          font-size: 11.5px;
-          font-weight: 650;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .history-meta {
-          color: #5F6C67;
-          font-family: "DM Mono", monospace;
-          font-size: 9px;
-          letter-spacing: .04em;
-        }
-
-        .history-delete {
-          position: absolute;
-          top: 14px;
-          right: 14px;
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid rgba(0,0,0,.18);
-          border-radius: 8px;
-          color: #fff;
-          background: rgba(10,14,13,.72);
-          opacity: 0;
-          cursor: pointer;
-          transition: opacity .15s ease, background .15s ease;
-        }
-
-        .history-card:hover .history-delete,
-        .history-delete:focus-visible {
-          opacity: 1;
-        }
-
-        .history-delete:hover {
-          background: rgba(220,60,60,.9);
-        }
-
-        @media (hover: none) {
-          .history-delete {
-            opacity: 1;
-          }
+          from { top: 0; opacity: 0; }
+          12% { opacity: 1; }
+          to { top: 100%; opacity: 0; }
         }
       `}</style>
 
-      <div className="qr-shell">
-        <header className="qr-header">
-          <div className="brand-row">
-            <div className="brand">
-              <div className="brand-mark">
+      <div className="mx-auto w-[min(1220px,calc(100%-32px))] max-[680px]:w-[min(100%-20px,1220px)]">
+        <header className="pb-6 pt-7 max-[680px]:pb-4 max-[680px]:pt-[18px]">
+          <div className="flex items-center justify-between gap-5">
+            <div className="flex items-center gap-[13px]">
+              <div className="flex h-[46px] w-[46px] items-center justify-center rounded-[15px] border border-[#293530] bg-[linear-gradient(145deg,#151D1A,#0A0F0D)] shadow-[0_15px_35px_rgba(0,0,0,.28),inset_0_1px_0_rgba(255,255,255,.04)] max-[680px]:h-[42px] max-[680px]:w-[42px]">
                 <QRLogo size={27} />
               </div>
 
               <div>
-                <div className="brand-title-row">
-                  <h1 className="brand-title">QR Studio</h1>
-                  <span className="pro-pill">PRO</span>
+                <div className="flex items-center gap-[9px]">
+                  <h1
+                    className={`${MONO} m-0 text-base font-semibold tracking-[-.03em] text-[#F4F8F6] max-[450px]:text-sm`}
+                  >
+                    QR Studio
+                  </h1>
+                  <span
+                    className={`${MONO} rounded-md bg-[#00C896] px-[7px] py-1 text-[8px] font-extrabold tracking-[.12em] text-[#03130E] shadow-[0_0_20px_rgba(0,200,150,.16)] max-[450px]:text-[7px]`}
+                  >
+                    PRO
+                  </span>
                 </div>
 
-                <p className="brand-subtitle">
+                <p className="mt-1 text-[11px] text-[#5F6C67] max-[450px]:text-[9px]">
                   Production-ready QR codes, beautifully made.
                 </p>
               </div>
             </div>
 
-            <div className="system-status">
-              <span className="system-dot" />
+            <div
+              className={`${MONO} flex items-center gap-2 rounded-[11px] border border-[#1D2724] bg-[rgba(12,17,16,.78)] px-3 py-[9px] text-[9px] uppercase tracking-[.08em] text-[#68756F] max-[680px]:hidden`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[#00C896] shadow-[0_0_10px_#00C896]" />
               System online
             </div>
           </div>
         </header>
 
-        <div className="workspace">
-          <div className="left-column">
+        <div className="grid grid-cols-[410px_minmax(0,1fr)] items-start gap-4 max-[1050px]:grid-cols-[360px_minmax(0,1fr)] max-[900px]:grid-cols-1">
+          <div className="flex min-w-0 flex-col gap-3 max-[900px]:grid max-[900px]:grid-cols-2 max-[900px]:items-start max-[680px]:grid-cols-1 max-[680px]:gap-2.5">
             <TypeSelector value={type} onChange={handleTypeChange} />
 
-            <Panel className="content-panel">
+            <Panel className="p-[18px] max-[450px]:p-[13px]">
               <SectionHeader
                 number="01"
                 eyebrow="CONTENT"
@@ -4103,7 +2106,11 @@ export default function QRGenerator() {
                 }
                 badge={
                   hasContent ? (
-                    <span className="char-badge">{content.length} chars</span>
+                    <span
+                      className={`${MONO} whitespace-nowrap rounded-lg border border-[#1D2724] bg-[#0A0F0E] px-2 py-1.5 text-[8px] text-[#53605C]`}
+                    >
+                      {content.length} chars
+                    </span>
                   ) : undefined
                 }
               />
@@ -4115,11 +2122,9 @@ export default function QRGenerator() {
                   invalid={invalid}
                 />
               )}
-
               {type === "Text" && (
                 <TextForm fields={fields} onChange={setFields} />
               )}
-
               {type === "Email" && (
                 <EmailForm
                   fields={fields}
@@ -4127,25 +2132,28 @@ export default function QRGenerator() {
                   invalid={invalid}
                 />
               )}
-
               {type === "Phone" && (
                 <PhoneForm fields={fields} onChange={setFields} />
               )}
-
               {type === "WiFi" && (
                 <WiFiForm fields={fields} onChange={setFields} />
               )}
 
               {hasContent && (
-                <div className="content-ready">
-                  <div className="content-ready-icon">
+                <div className="mt-[15px] flex items-center gap-2.5 rounded-xl border border-[rgba(0,200,150,.13)] bg-[rgba(0,200,150,.035)] p-2.5">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-[rgba(0,200,150,.08)] text-[#00C896]">
                     <Icon name="check" size={13} strokeWidth={2.3} />
                   </div>
 
-                  <div>
-                    <p className="content-ready-title">Content ready</p>
-
-                    <p className="content-ready-value">{content}</p>
+                  <div className="min-w-0">
+                    <p className="m-0 text-[10px] font-semibold text-[#B8C5C0]">
+                      Content ready
+                    </p>
+                    <p
+                      className={`${MONO} mt-[3px] max-w-[280px] truncate text-[8px] text-[#50605A]`}
+                    >
+                      {content}
+                    </p>
                   </div>
                 </div>
               )}
@@ -4192,22 +2200,39 @@ export default function QRGenerator() {
             />
           </div>
 
-          <div className="right-column">
-            <Panel className="preview-panel">
-              <div className="preview-header">
-                <div className="preview-heading">
-                  <div className="preview-index">02</div>
+          <div className="sticky top-[18px] min-w-0 max-[900px]:static">
+            <Panel>
+              <div className="flex items-center justify-between gap-[15px] border-b border-[#1B2421] bg-[rgba(14,20,18,.82)] px-[17px] py-[15px] max-[680px]:p-3">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`${MONO} flex h-[30px] w-[30px] items-center justify-center rounded-[9px] border border-[#24302B] bg-[rgba(0,200,150,.045)] text-[8px] text-[#00C896]`}
+                  >
+                    02
+                  </div>
 
                   <div>
-                    <div className="preview-label">PREVIEW</div>
-                    <p className="preview-title">Live QR canvas</p>
+                    <div
+                      className={`${MONO} text-[7px] tracking-[.15em] text-[#596660]`}
+                    >
+                      PREVIEW
+                    </div>
+                    <p className="mt-0.5 text-[11px] font-semibold text-[#C9D2CE]">
+                      Live QR canvas
+                    </p>
                   </div>
                 </div>
 
-                <div className="preview-badges">
-                  <span className="preview-badge">{type}</span>
-
-                  <span className="preview-badge accent">{size}px</span>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`${MONO} rounded-lg border border-[#242E2A] bg-[#111715] px-2 py-1.5 text-[7px] tracking-[.05em] text-[#68746F] max-[680px]:hidden`}
+                  >
+                    {type}
+                  </span>
+                  <span
+                    className={`${MONO} rounded-lg border border-[rgba(0,200,150,.12)] bg-[rgba(0,200,150,.045)] px-2 py-1.5 text-[7px] tracking-[.05em] text-[#67AF9D]`}
+                  >
+                    {size}px
+                  </span>
                 </div>
               </div>
 
@@ -4219,7 +2244,11 @@ export default function QRGenerator() {
                 aspect={qr ? qr.height / qr.width : 1}
               />
 
-              {qrError && <div className="inline-error qr-error">{qrError}</div>}
+              {qrError && (
+                <div className={`${INLINE_ERROR} mx-[13px] mb-1 mt-0`}>
+                  {qrError}
+                </div>
+              )}
 
               {hasContent && (
                 <StatusBar content={content} size={size} ecc={ecc} />
@@ -4241,15 +2270,13 @@ export default function QRGenerator() {
 
             <QualityCard ecc={ecc} />
 
-            <div className="feature-grid">
+            <div className="mt-3 grid grid-cols-3 gap-2 max-[680px]:gap-[5px]">
               <FeatureCard icon="bolt" title="Instant" text="Live generation" />
-
               <FeatureCard
                 icon="shield"
                 title="Reliable"
                 text={`${ecc} correction`}
               />
-
               <FeatureCard
                 icon="printer"
                 title="Print ready"
@@ -4267,9 +2294,10 @@ export default function QRGenerator() {
           onClear={handleClearHistory}
         />
 
-        <footer className="qr-footer">
-          <span className="footer-brand">QR STUDIO · DARK EDITION</span>
-
+        <footer className="flex items-center justify-between gap-5 pb-[18px] pt-6 text-[8px] text-[#38433F] max-[680px]:flex-col max-[680px]:pb-[15px] max-[680px]:text-center">
+          <span className={`${MONO} tracking-[.08em]`}>
+            QR STUDIO · DARK EDITION
+          </span>
           <span>Always test your QR before publishing or printing.</span>
         </footer>
       </div>
