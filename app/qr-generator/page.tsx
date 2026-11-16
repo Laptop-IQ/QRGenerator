@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * QR Studio — premium light redesign.
+ *
+ * Setup (once):
+ *   npm i remixicon
+ * The stylesheet is imported below. All icons are Remix Icon (line style).
+ *
+ * Behaviour, state shape, storage keys and the ./qr-render API are unchanged.
+ */
+
+import "remixicon/fonts/remixicon.css";
+
 import {
   useCallback,
   useEffect,
@@ -9,6 +21,7 @@ import {
   type ChangeEvent,
   type CSSProperties,
   type InputHTMLAttributes,
+  type KeyboardEvent,
   type ReactNode,
   type TextareaHTMLAttributes,
 } from "react";
@@ -20,8 +33,6 @@ import {
   type DotStyle,
   type RenderResult,
 } from "./qr-render";
-
-const ACCENT = "#00C896";
 
 type QRType = "URL" | "Text" | "Email" | "Phone" | "WiFi";
 type ECCLevel = "L" | "M" | "Q" | "H";
@@ -78,31 +89,36 @@ const QR_TYPES: Array<{
   id: QRType;
   label: string;
   description: string;
-  icon: "link" | "text" | "mail" | "phone" | "wifi";
+  icon: IconName;
 }> = [
   {
     id: "URL",
     label: "Website",
-    description: "Website or landing page",
+    description: "Link to a website or landing page.",
     icon: "link",
   },
   {
     id: "Text",
     label: "Text",
-    description: "Plain text content",
+    description: "Show plain text when scanned.",
     icon: "text",
   },
   {
     id: "Email",
     label: "Email",
-    description: "Email with subject",
+    description: "Start an email with the subject filled in.",
     icon: "mail",
   },
-  { id: "Phone", label: "Phone", description: "Phone number", icon: "phone" },
+  {
+    id: "Phone",
+    label: "Phone",
+    description: "Dial a phone number.",
+    icon: "phone",
+  },
   {
     id: "WiFi",
-    label: "WiFi",
-    description: "Network credentials",
+    label: "Wi-Fi",
+    description: "Let people join a network without typing the password.",
     icon: "wifi",
   },
 ];
@@ -122,40 +138,63 @@ const ECC_LEVELS: Record<
   ECCLevel,
   { name: string; recovery: string; description: string }
 > = {
-  L: { name: "Low", recovery: "7%", description: "Smallest QR" },
-  M: { name: "Medium", recovery: "15%", description: "Recommended" },
-  Q: { name: "High", recovery: "25%", description: "More damage resistant" },
-  H: { name: "Maximum", recovery: "30%", description: "Print & logos" },
+  L: {
+    name: "Low",
+    recovery: "7%",
+    description: "Smallest code, least forgiving.",
+  },
+  M: {
+    name: "Medium",
+    recovery: "15%",
+    description: "Recommended for most uses.",
+  },
+  Q: {
+    name: "High",
+    recovery: "25%",
+    description: "Better for printed codes.",
+  },
+  H: {
+    name: "Maximum",
+    recovery: "30%",
+    description: "Best choice when adding a logo.",
+  },
 };
 
 /* ------------------------------------------------------------------ */
-/* Shared Tailwind class strings (kept as full literals for the JIT)   */
+/* Design tokens as Tailwind class strings (full literals for the JIT)  */
+/*   page   #F6F4EE   surface #FFFFFF   tint   #FAF8F3                  */
+/*   line   #E3DED1   line-2  #CFC8B8                                   */
+/*   ink    #1B1A17   ink-2   #4A4740   ink-3  #77736A                  */
+/*   brand  #1F2A56   brand-hover #16203F                               */
 /* ------------------------------------------------------------------ */
 
-const MONO = "font-['DM_Mono','SFMono-Regular',Consolas,monospace]";
+const FOCUS =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1F2A56]";
 
-const PANEL =
-  "overflow-hidden rounded-[20px] border border-[#1D2724] bg-[#0C1110] bg-[linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.008))] shadow-[0_1px_1px_rgba(0,0,0,.35),0_20px_65px_rgba(0,0,0,.18)]";
+const CARD =
+  "rounded-xl border border-[#E3DED1] bg-white shadow-[0_1px_2px_rgba(27,26,23,0.04)]";
 
-const INPUT =
-  "w-full min-h-[43px] rounded-xl border border-[#202B27] bg-[#090E0D] px-[13px] py-[11px] text-[13px] leading-normal text-[#EDF3F0] outline-none transition placeholder:text-[#3E4945] hover:border-[#2E3A35] focus:border-[#00C896]/75 focus:bg-[#0B1110] focus:shadow-[0_0_0_3px_rgba(0,200,150,.075)] aria-[invalid=true]:border-red-400/70";
+const INPUT_BASE = `w-full rounded-lg border border-[#CFC8B8] bg-white px-3 text-sm text-[#1B1A17] placeholder:text-[#8A8579] transition-colors hover:border-[#A9A292] focus:border-[#1F2A56] focus:outline-none focus:ring-[3px] focus:ring-[#1F2A56]/15 aria-[invalid=true]:border-[#B42318] aria-[invalid=true]:focus:ring-[#B42318]/15`;
 
-const BTN =
-  "inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[7px] rounded-[11px] border border-[#26312D] bg-[#0B100F] px-[13px] text-[11px] font-semibold text-[#9AA7A1] transition hover:border-[#394640] hover:bg-[#101714] hover:text-[#EDF3F0] disabled:cursor-not-allowed disabled:opacity-30";
+const BTN = `inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`;
+const BTN_PRIMARY =
+  "border-[#1F2A56] bg-[#1F2A56] text-white hover:enabled:bg-[#16203F]";
+const BTN_SECONDARY =
+  "border-[#CFC8B8] bg-white text-[#1B1A17] hover:enabled:border-[#A9A292] hover:enabled:bg-[#F6F4EE]";
+const BTN_DANGER =
+  "border-[#CFC8B8] bg-white text-[#B42318] hover:enabled:border-[#F1A9A0] hover:enabled:bg-[#FEF3F2]";
 
 const RANGE =
-  "mt-[7px] h-[5px] w-full cursor-pointer appearance-none rounded-full outline-none bg-[linear-gradient(to_right,#00C896_var(--range-progress),#242E2A_var(--range-progress))] [&::-webkit-slider-thumb]:h-[17px] [&::-webkit-slider-thumb]:w-[17px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-solid [&::-webkit-slider-thumb]:border-[#101615] [&::-webkit-slider-thumb]:bg-[#00C896] [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,200,150,.3),0_3px_9px_rgba(0,0,0,.45)] [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-solid [&::-moz-range-thumb]:border-[#101615] [&::-moz-range-thumb]:bg-[#00C896]";
+  "h-1 w-full cursor-pointer appearance-none rounded-full bg-[linear-gradient(to_right,#1F2A56_var(--range-progress),#DDD7C8_var(--range-progress))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1F2A56] [&::-webkit-slider-thumb]:h-[18px] [&::-webkit-slider-thumb]:w-[18px] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-[#1F2A56] [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-sm [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-solid [&::-moz-range-thumb]:border-[#1F2A56] [&::-moz-range-thumb]:bg-white";
 
-const INLINE_ERROR =
-  "my-2 flex items-start gap-2 rounded-[10px] border border-[rgba(255,90,90,.25)] bg-[rgba(255,90,90,.06)] px-[11px] py-[9px] text-[11px] leading-[1.45] text-[#FF9C9C]";
+const NOTICE_ERROR =
+  "flex items-start gap-2 rounded-lg border border-[#F1A9A0] bg-[#FEF3F2] px-3 py-2.5 text-[13px] leading-snug text-[#B42318]";
+const NOTICE_WARN =
+  "flex items-start gap-2 rounded-lg border border-[#FEDF89] bg-[#FFFAEB] px-3 py-2.5 text-[13px] leading-snug text-[#93370D]";
 
-const INLINE_WARNING =
-  "my-2 flex items-start gap-2 rounded-[10px] border border-[rgba(255,190,70,.25)] bg-[rgba(255,190,70,.06)] px-[11px] py-[9px] text-[11px] leading-[1.45] text-[#F2C46B]";
-
-const CONTROL_TITLE = "block text-[11px] font-semibold text-[#B6C0BC]";
-const CONTROL_SUB = "mt-[3px] block text-[9px] text-[#4F5C57]";
-const CONTROL_META = `${MONO} whitespace-nowrap text-[7px] tracking-[.1em] text-[#48544F]`;
-const DIVIDER = "mb-[19px] h-px bg-[#1B2421]";
+/* ------------------------------------------------------------------ */
+/* Helpers                                                              */
+/* ------------------------------------------------------------------ */
 
 function emptyFields(): QRFields {
   return {
@@ -225,6 +264,10 @@ function isValidURL(value: string): boolean {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Icons — Remix Icon, line style                                       */
+/* ------------------------------------------------------------------ */
+
 type IconName =
   | "link"
   | "text"
@@ -234,215 +277,69 @@ type IconName =
   | "check"
   | "download"
   | "copy"
-  | "sparkles"
-  | "bolt"
-  | "shield"
-  | "printer"
-  | "arrow"
-  | "qr"
   | "upload"
   | "trash"
   | "history"
   | "image"
-  | "save"
-  | "close";
+  | "bookmark"
+  | "close"
+  | "qr"
+  | "chevron"
+  | "warning"
+  | "printer"
+  | "loader"
+  | "success";
+
+const ICONS: Record<IconName, string> = {
+  link: "ri-link",
+  text: "ri-text",
+  mail: "ri-mail-line",
+  phone: "ri-phone-line",
+  wifi: "ri-wifi-line",
+  check: "ri-check-line",
+  download: "ri-download-2-line",
+  copy: "ri-file-copy-line",
+  upload: "ri-upload-2-line",
+  trash: "ri-delete-bin-line",
+  history: "ri-history-line",
+  image: "ri-image-line",
+  bookmark: "ri-bookmark-line",
+  close: "ri-close-line",
+  qr: "ri-qr-code-line",
+  chevron: "ri-arrow-down-s-line",
+  warning: "ri-error-warning-line",
+  printer: "ri-printer-line",
+  loader: "ri-loader-4-line",
+  success: "ri-checkbox-circle-line",
+};
 
 function Icon({
   name,
   size = 18,
-  strokeWidth = 1.8,
+  className = "",
 }: {
   name: IconName;
   size?: number;
-  strokeWidth?: number;
-}) {
-  const paths: Record<IconName, ReactNode> = {
-    link: (
-      <>
-        <path d="M10 13a5 5 0 0 0 7.07.07l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15" />
-        <path d="M14 11a5 5 0 0 0-7.07-.07l-2 2A5 5 0 0 0 7 20l1.15-1.15" />
-      </>
-    ),
-    text: (
-      <>
-        <path d="M5 5h14" />
-        <path d="M12 5v14" />
-        <path d="M8 19h8" />
-      </>
-    ),
-    mail: (
-      <>
-        <rect x="3" y="5" width="18" height="14" rx="3" />
-        <path d="m4 7 8 6 8-6" />
-      </>
-    ),
-    phone: (
-      <path d="M7 3h3l2 5-2 1.5a15 15 0 0 0 4.5 4.5L16 12l5 2v3a3 3 0 0 1-3 3C10.27 20 4 13.73 4 6a3 3 0 0 1 3-3Z" />
-    ),
-    wifi: (
-      <>
-        <path d="M5 12.5a11 11 0 0 1 14 0" />
-        <path d="M8 15.5a6.5 6.5 0 0 1 8 0" />
-        <path d="M11 18.5a2 2 0 0 1 2 0" />
-        <circle cx="12" cy="20" r=".5" fill="currentColor" />
-      </>
-    ),
-    check: <path d="m5 12 4 4L19 6" />,
-    download: (
-      <>
-        <path d="M12 3v12" />
-        <path d="m7 10 5 5 5-5" />
-        <path d="M5 21h14" />
-      </>
-    ),
-    copy: (
-      <>
-        <rect x="8" y="8" width="12" height="12" rx="2" />
-        <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
-      </>
-    ),
-    sparkles: (
-      <>
-        <path d="m12 3 1.2 4.8L18 9l-4.8 1.2L12 15l-1.2-4.8L6 9l4.8-1.2L12 3Z" />
-        <path d="m19 15 .6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" />
-      </>
-    ),
-    bolt: <path d="m13 2-9 12h7l-1 8 9-13h-7l1-7Z" />,
-    shield: (
-      <>
-        <path d="M12 3 20 6v5c0 5-3.4 8.7-8 10-4.6-1.3-8-5-8-10V6l8-3Z" />
-        <path d="m8.5 12 2.3 2.3 4.7-5" />
-      </>
-    ),
-    printer: (
-      <>
-        <path d="M6 9V3h12v6" />
-        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-        <path d="M6 14h12v7H6z" />
-      </>
-    ),
-    arrow: (
-      <>
-        <path d="M5 12h14" />
-        <path d="m13 6 6 6-6 6" />
-      </>
-    ),
-    qr: (
-      <>
-        <path d="M4 4h6v6H4z" />
-        <path d="M14 4h6v6h-6z" />
-        <path d="M4 14h6v6H4z" />
-        <path d="M14 14h2v2h-2z" />
-        <path d="M18 14h2v6h-2z" />
-        <path d="M14 18h2v2h-2z" />
-      </>
-    ),
-    upload: (
-      <>
-        <path d="M12 16V4" />
-        <path d="m7 9 5-5 5 5" />
-        <path d="M5 20h14" />
-      </>
-    ),
-    trash: (
-      <>
-        <path d="M4 7h16" />
-        <path d="M9 7V4h6v3" />
-        <path d="m6 7 1 13h10l1-13" />
-        <path d="M10 11v6M14 11v6" />
-      </>
-    ),
-    history: (
-      <>
-        <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-        <path d="M3 3v5h5" />
-        <path d="M12 7v5l3 2" />
-      </>
-    ),
-    image: (
-      <>
-        <rect x="3" y="4" width="18" height="16" rx="3" />
-        <circle cx="9" cy="10" r="1.6" />
-        <path d="m4 18 5-5 4 4 3-3 4 4" />
-      </>
-    ),
-    save: (
-      <>
-        <path d="M5 4h11l3 3v13H5z" />
-        <path d="M8 4v5h7V4" />
-        <path d="M8 20v-6h8v6" />
-      </>
-    ),
-    close: (
-      <>
-        <path d="M6 6l12 12" />
-        <path d="M18 6 6 18" />
-      </>
-    ),
-  };
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      {paths[name]}
-    </svg>
-  );
-}
-
-function QRLogo({
-  size = 30,
-  accent = ACCENT,
-}: {
-  size?: number;
-  accent?: string;
-}) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect x="2" y="2" width="11" height="11" rx="2.5" fill={accent} />
-      <rect x="5" y="5" width="5" height="5" rx="1" fill="#07100D" />
-      <rect x="19" y="2" width="11" height="11" rx="2.5" fill={accent} />
-      <rect x="22" y="5" width="5" height="5" rx="1" fill="#07100D" />
-      <rect x="2" y="19" width="11" height="11" rx="2.5" fill={accent} />
-      <rect x="5" y="22" width="5" height="5" rx="1" fill="#07100D" />
-      <rect x="19" y="19" width="4" height="4" rx="1" fill={accent} />
-      <rect x="26" y="19" width="4" height="4" rx="1" fill={accent} />
-      <rect x="19" y="26" width="4" height="4" rx="1" fill={accent} />
-      <rect x="25" y="25" width="5" height="5" rx="1" fill={accent} />
-    </svg>
-  );
-}
-
-function Panel({
-  children,
-  className = "",
-}: {
-  children: ReactNode;
   className?: string;
 }) {
-  return <section className={`${PANEL} ${className}`}>{children}</section>;
+  return (
+    <i
+      aria-hidden="true"
+      className={`${ICONS[name]} inline-block shrink-0 leading-none ${className}`}
+      style={{ fontSize: size }}
+    />
+  );
 }
+
+/* ------------------------------------------------------------------ */
+/* Primitives                                                           */
+/* ------------------------------------------------------------------ */
 
 function Input({
   className = "",
   ...props
 }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={`${INPUT} ${className}`} {...props} />;
+  return <input className={`h-10 ${INPUT_BASE} ${className}`} {...props} />;
 }
 
 function Textarea({
@@ -451,7 +348,7 @@ function Textarea({
 }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
-      className={`${INPUT} min-h-[130px] resize-y ${className}`}
+      className={`min-h-[112px] resize-y py-2.5 leading-relaxed ${INPUT_BASE} ${className}`}
       {...props}
     />
   );
@@ -459,77 +356,42 @@ function Textarea({
 
 function FormField({
   label,
-  required,
+  htmlFor,
+  hint,
+  error,
+  right,
   children,
 }: {
   label: string;
-  required?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="mb-[15px] last:mb-0">
-      <label
-        className={`${MONO} mb-[7px] block text-[8px] font-semibold uppercase tracking-[.12em] text-[#71807A]`}
-      >
-        {label}
-        {required && <span className="ml-[3px] text-[#00C896]">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function FieldHint({
-  children,
-  right,
-  error = false,
-}: {
-  children: ReactNode;
+  htmlFor: string;
+  hint?: ReactNode;
+  error?: ReactNode;
   right?: ReactNode;
-  error?: boolean;
+  children: ReactNode;
 }) {
   return (
-    <div className="mt-[7px] flex items-center justify-between gap-2.5 text-[9px] leading-[1.4] text-[#4F5B56]">
-      <span className={error ? "text-[#F87171]" : ""}>{children}</span>
-      {right && <span className={`${MONO} text-[#46524D]`}>{right}</span>}
-    </div>
-  );
-}
-
-function SectionHeader({
-  number,
-  eyebrow,
-  title,
-  description,
-  badge,
-}: {
-  number?: string;
-  eyebrow?: string;
-  title: string;
-  description?: string;
-  badge?: ReactNode;
-}) {
-  return (
-    <div className="mb-[18px] flex items-start justify-between gap-[15px]">
-      <div className="min-w-0">
-        {(number || eyebrow) && (
-          <div
-            className={`${MONO} mb-[5px] flex items-center gap-[7px] text-[8px] font-semibold tracking-[.14em] text-[#56635E]`}
-          >
-            {number && <span className="text-[#00C896]">{number}</span>}
-            {eyebrow}
-          </div>
-        )}
-        <h2 className="m-0 text-base font-bold tracking-[-.025em] text-[#EAF0ED] max-[450px]:text-sm">
-          {title}
-        </h2>
-        {description && (
-          <p className="mt-[5px] max-w-[310px] text-[11px] leading-[1.55] text-[#68756F]">
-            {description}
-          </p>
-        )}
+    <div className="mb-4 last:mb-0">
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <label
+          htmlFor={htmlFor}
+          className="text-[13px] font-medium text-[#1B1A17]"
+        >
+          {label}
+        </label>
+        {right && <span className="text-xs text-[#77736A]">{right}</span>}
       </div>
-      {badge}
+      {children}
+      {error ? (
+        <p
+          role="alert"
+          className="mt-1.5 flex items-center gap-1.5 text-[13px] text-[#B42318]"
+        >
+          <Icon name="warning" size={15} />
+          {error}
+        </p>
+      ) : (
+        hint && <p className="mt-1.5 text-xs text-[#77736A]">{hint}</p>
+      )}
     </div>
   );
 }
@@ -547,7 +409,7 @@ function Checkbox({
 }) {
   return (
     <label
-      className={`inline-flex cursor-pointer select-none items-center gap-2 text-[11px] text-[#82908B] ${className}`}
+      className={`inline-flex cursor-pointer select-none items-center gap-2.5 text-[13px] text-[#4A4740] ${className}`}
     >
       <input
         type="checkbox"
@@ -555,84 +417,182 @@ function Checkbox({
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <span className="inline-flex h-[17px] w-[17px] items-center justify-center rounded-[5px] border border-[#33423C] bg-[#0B100F] text-[#03130E] peer-checked:border-[#00C896] peer-checked:bg-[#00C896] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#00C896]">
-        {checked && <Icon name="check" size={11} strokeWidth={3} />}
+      <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border border-[#A9A292] bg-white text-white transition-colors peer-checked:border-[#1F2A56] peer-checked:bg-[#1F2A56] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#1F2A56]">
+        {checked && <Icon name="check" size={14} />}
       </span>
       {children}
     </label>
   );
 }
 
-function TypeSelector({
+function SettingRow({
+  title,
+  note,
+  value,
+  children,
+}: {
+  title: string;
+  note?: string;
+  value?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border-t border-[#EEEAE0] py-5 first:border-t-0 first:pt-0 last:pb-0">
+      <div className="mb-3 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-[13px] font-medium text-[#1B1A17]">{title}</h3>
+          {note && <p className="mt-0.5 text-xs text-[#77736A]">{note}</p>}
+        </div>
+        {value && (
+          <span className="text-[13px] tabular-nums text-[#4A4740]">
+            {value}
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: Array<{ id: T; label: string }>;
+  value: T;
+  onChange: (value: T) => void;
+  label: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="grid gap-px overflow-hidden rounded-lg border border-[#CFC8B8] bg-[#CFC8B8]"
+      style={{
+        gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+      }}
+    >
+      {options.map((item) => {
+        const active = item.id === value;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(item.id)}
+            className={`h-9 cursor-pointer text-[13px] font-medium transition-colors focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#1F2A56] ${
+              active
+                ? "bg-[#1F2A56] text-white"
+                : "bg-white text-[#4A4740] hover:bg-[#F6F4EE]"
+            }`}
+          >
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Disclosure({
+  title,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  summary: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className="group border-t border-[#E3DED1] first:border-t-0"
+    >
+      <summary
+        className={`flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-[#FAF8F3] [&::-webkit-details-marker]:hidden ${FOCUS} focus-visible:-outline-offset-2`}
+      >
+        <span>
+          <span className="block text-sm font-semibold text-[#1B1A17]">
+            {title}
+          </span>
+          <span className="mt-0.5 block text-xs text-[#77736A]">{summary}</span>
+        </span>
+        <Icon
+          name="chevron"
+          size={20}
+          className="text-[#77736A] transition-transform group-open:rotate-180"
+        />
+      </summary>
+      <div className="px-5 pb-5 pt-1">{children}</div>
+    </details>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Content tabs and forms                                               */
+/* ------------------------------------------------------------------ */
+
+function TypeTabs({
   value,
   onChange,
 }: {
   value: QRType;
   onChange: (value: QRType) => void;
 }) {
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const index = QR_TYPES.findIndex((t) => t.id === value);
+    let next = index;
+
+    if (e.key === "ArrowRight") next = (index + 1) % QR_TYPES.length;
+    else if (e.key === "ArrowLeft")
+      next = (index - 1 + QR_TYPES.length) % QR_TYPES.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = QR_TYPES.length - 1;
+    else return;
+
+    e.preventDefault();
+    const target = QR_TYPES[next];
+    onChange(target.id);
+    requestAnimationFrame(() =>
+      document.getElementById(`tab-${target.id}`)?.focus(),
+    );
+  };
+
   return (
-    <Panel className="p-3.5 max-[900px]:col-span-full max-[450px]:p-[13px]">
-      <div className="flex items-center justify-between gap-[15px] px-1 pb-3 pt-[3px]">
-        <div>
-          <span
-            className={`${MONO} mb-[3px] block text-[8px] font-semibold tracking-[.17em] text-[#56625E]`}
+    <div
+      role="tablist"
+      aria-label="QR code type"
+      onKeyDown={onKeyDown}
+      className="grid grid-cols-5 border-b border-[#E3DED1]"
+    >
+      {QR_TYPES.map((item) => {
+        const active = value === item.id;
+        return (
+          <button
+            key={item.id}
+            id={`tab-${item.id}`}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-controls="content-panel"
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(item.id)}
+            className={`relative flex cursor-pointer flex-col items-center justify-center gap-1 px-1 py-3 text-[13px] font-medium transition-colors first:rounded-tl-xl last:rounded-tr-xl sm:flex-row sm:gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#1F2A56] ${
+              active
+                ? "text-[#1F2A56] after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-[#1F2A56]"
+                : "text-[#77736A] hover:bg-[#FAF8F3] hover:text-[#1B1A17]"
+            }`}
           >
-            CREATE
-          </span>
-          <h2 className="m-0 text-[13px] font-semibold tracking-[-.015em] text-[#D8E0DD]">
-            Choose a format
-          </h2>
-        </div>
-        <span className={`${MONO} text-[8px] tracking-[.1em] text-[#3F4A46]`}>
-          05 FORMATS
-        </span>
-      </div>
-
-      <div className="grid grid-cols-5 gap-1.5 max-[680px]:gap-[5px]">
-        {QR_TYPES.map((item) => {
-          const active = value === item.id;
-
-          return (
-            <button
-              key={item.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChange(item.id)}
-              className={`relative flex min-h-[78px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[13px] border px-1 py-2.5 transition hover:-translate-y-px max-[680px]:min-h-[70px] max-[450px]:min-h-16 max-[450px]:rounded-[10px] ${
-                active
-                  ? "border-[#33443E] bg-[#111816] bg-[linear-gradient(145deg,rgba(0,200,150,.075),rgba(255,255,255,.018))] text-[#F1F6F4] shadow-[inset_0_0_0_1px_rgba(0,200,150,.055),0_8px_24px_rgba(0,0,0,.16)]"
-                  : "border-[#1D2724] bg-[#0A0F0E] text-[#66736E] hover:border-[#34403B] hover:bg-[#0E1412] hover:text-[#C5CECA]"
-              }`}
-            >
-              {active && (
-                <span className="absolute right-[7px] top-[7px] h-[5px] w-[5px] rounded-full bg-[#00C896] shadow-[0_0_10px_#00C896]" />
-              )}
-
-              <span
-                className={`flex h-[29px] w-[29px] items-center justify-center rounded-[9px] max-[450px]:h-[25px] max-[450px]:w-[25px] ${
-                  active
-                    ? "bg-[rgba(0,200,150,.085)] text-[#00C896]"
-                    : "bg-white/[0.025]"
-                }`}
-              >
-                <Icon name={item.icon} size={18} />
-              </span>
-
-              <span className="text-[9px] font-semibold max-[680px]:text-[8px] max-[450px]:text-[7px]">
-                {item.label}
-              </span>
-              <span
-                className={`${MONO} text-[7px] tracking-[.08em] max-[450px]:hidden ${
-                  active ? "text-[#668278]" : "text-[#414C48]"
-                }`}
-              >
-                {item.id}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </Panel>
+            <Icon name={item.icon} size={18} />
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -646,22 +606,23 @@ function URLForm({
   invalid: boolean;
 }) {
   return (
-    <FormField label="Website URL" required>
+    <FormField
+      label="Web address"
+      htmlFor="f-url"
+      hint="Shorter addresses make simpler codes that scan faster."
+      error={invalid ? "Start the address with http:// or https://" : undefined}
+    >
       <Input
+        id="f-url"
         type="url"
         autoFocus
         inputMode="url"
         autoComplete="url"
-        placeholder="https://yourwebsite.com"
+        placeholder="https://example.com"
         value={fields.url}
         aria-invalid={invalid}
         onChange={(e) => onChange({ ...fields, url: e.target.value })}
       />
-      <FieldHint error={invalid} right={invalid ? undefined : "HTTP / HTTPS"}>
-        {invalid
-          ? "Enter a valid http:// or https:// URL."
-          : "Short URLs create cleaner, easier-to-scan QR codes."}
-      </FieldHint>
     </FormField>
   );
 }
@@ -673,27 +634,21 @@ function TextForm({
   fields: QRFields;
   onChange: (fields: QRFields) => void;
 }) {
-  const progress = Math.min((fields.text.length / MAX_TEXT) * 100, 100);
-
   return (
-    <FormField label="Text content" required>
+    <FormField
+      label="Text"
+      htmlFor="f-text"
+      right={`${fields.text.length.toLocaleString()} / ${MAX_TEXT.toLocaleString()}`}
+    >
       <Textarea
+        id="f-text"
         autoFocus
         rows={6}
         maxLength={MAX_TEXT}
-        placeholder="Write anything you want to encode..."
+        placeholder="Anything you want people to read after scanning"
         value={fields.text}
         onChange={(e) => onChange({ ...fields, text: e.target.value })}
       />
-      <FieldHint right={`${fields.text.length.toLocaleString()} / ${MAX_TEXT}`}>
-        Plain text QR
-      </FieldHint>
-      <div className="mt-[7px] h-0.5 overflow-hidden rounded-full bg-[#1B2421]">
-        <div
-          className="h-full rounded-[inherit] bg-[#00C896] shadow-[0_0_8px_rgba(0,200,150,.5)] transition-[width] duration-200"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
     </FormField>
   );
 }
@@ -706,8 +661,13 @@ function PhoneForm({
   onChange: (fields: QRFields) => void;
 }) {
   return (
-    <FormField label="Phone number" required>
+    <FormField
+      label="Phone number"
+      htmlFor="f-phone"
+      hint="Scanning opens the phone’s dialer with this number."
+    >
       <Input
+        id="f-phone"
         type="tel"
         inputMode="tel"
         autoComplete="tel"
@@ -716,7 +676,6 @@ function PhoneForm({
         value={fields.phone}
         onChange={(e) => onChange({ ...fields, phone: e.target.value })}
       />
-      <FieldHint right="TEL">Scanning opens the device dialer.</FieldHint>
     </FormField>
   );
 }
@@ -737,37 +696,37 @@ function EmailForm({
 
   return (
     <>
-      <FormField label="Email address" required>
+      <FormField
+        label="Email address"
+        htmlFor="f-email"
+        error={invalid ? "That doesn’t look like an email address." : undefined}
+      >
         <Input
+          id="f-email"
           type="email"
           inputMode="email"
           autoComplete="email"
           autoFocus
-          placeholder="hello@example.com"
+          placeholder="name@example.com"
           value={fields.email}
           aria-invalid={invalid}
           onChange={update("email")}
         />
-        {invalid && (
-          <p className="mt-[7px] text-[10px] text-[#F87171]">
-            Please enter a valid email address.
-          </p>
-        )}
       </FormField>
 
-      <FormField label="Subject">
+      <FormField label="Subject" htmlFor="f-subject" right="Optional">
         <Input
+          id="f-subject"
           type="text"
-          placeholder="Optional subject"
           value={fields.subject}
           onChange={update("subject")}
         />
       </FormField>
 
-      <FormField label="Message">
+      <FormField label="Message" htmlFor="f-body" right="Optional">
         <Textarea
+          id="f-body"
           rows={4}
-          placeholder="Optional email message"
           value={fields.body}
           onChange={update("body")}
           className="resize-none"
@@ -789,54 +748,51 @@ function WiFiForm({
 
   return (
     <>
-      <FormField label="Network name" required>
+      <FormField label="Network name" htmlFor="f-ssid">
         <Input
+          id="f-ssid"
           type="text"
           autoFocus
           autoComplete="off"
-          placeholder="My WiFi Network"
           value={fields.ssid}
           onChange={update("ssid")}
         />
       </FormField>
 
-      <FormField label="Password">
+      <FormField label="Password" htmlFor="f-wifi-pass">
         <Input
+          id="f-wifi-pass"
           type="text"
           autoComplete="off"
-          placeholder="WiFi password"
           value={fields.password}
           onChange={update("password")}
         />
       </FormField>
 
-      <FormField label="Security">
-        <div className="grid grid-cols-3 gap-1 rounded-[11px] border border-[#1D2724] bg-[#080D0C] p-1">
-          {(["WPA", "WEP", "None"] as const).map((item) => {
-            const active = fields.security === item;
-            return (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={active}
-                onClick={() => onChange({ ...fields, security: item })}
-                className={`${MONO} min-h-[35px] cursor-pointer rounded-lg border-0 text-[9px] transition ${
-                  active
-                    ? "bg-[#17201D] text-[#EAF2EE] shadow-[0_1px_3px_rgba(0,0,0,.25),inset_0_0_0_1px_#293832]"
-                    : "bg-transparent text-[#5E6A65] hover:text-[#D4DBD8]"
-                }`}
-              >
-                {item}
-              </button>
-            );
-          })}
-        </div>
-      </FormField>
+      <div className="mb-4 last:mb-0">
+        <span className="mb-1.5 block text-[13px] font-medium text-[#1B1A17]">
+          Security
+        </span>
+        <Segmented
+          label="Wi-Fi security"
+          value={fields.security}
+          onChange={(security) => onChange({ ...fields, security })}
+          options={[
+            { id: "WPA", label: "WPA" },
+            { id: "WEP", label: "WEP" },
+            { id: "None", label: "None" },
+          ]}
+        />
+      </div>
     </>
   );
 }
 
-function ColorPicker({
+/* ------------------------------------------------------------------ */
+/* Style controls                                                       */
+/* ------------------------------------------------------------------ */
+
+function ColorField({
   label,
   value,
   onChange,
@@ -846,35 +802,25 @@ function ColorPicker({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="rounded-xl border border-[#1D2724] bg-[#090E0D] p-[11px]">
-      <div className="mb-[9px] flex items-center justify-between gap-2">
-        <span className="text-[9px] text-[#68756F]">{label}</span>
-        <span className={`${MONO} text-[7px] text-[#414D48]`}>
+    <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-[#CFC8B8] bg-white p-2 transition-colors hover:border-[#A9A292] focus-within:border-[#1F2A56] focus-within:ring-[3px] focus-within:ring-[#1F2A56]/15">
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-[#E3DED1] bg-transparent p-0 focus:outline-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-[5px] [&::-webkit-color-swatch]:border-0 [&::-moz-color-swatch]:rounded-[5px] [&::-moz-color-swatch]:border-0"
+      />
+      <span className="flex flex-col leading-tight">
+        <span className="text-xs text-[#77736A]">{label}</span>
+        <span className="text-[13px] font-medium tabular-nums text-[#1B1A17]">
           {value.toUpperCase()}
         </span>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={label}
-          className="h-[31px] w-[31px] shrink-0 cursor-pointer rounded-lg border border-[#2A3530] bg-[#0B100F] p-[3px] [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-[5px] [&::-webkit-color-swatch]:border-0"
-        />
-        <div
-          className="h-[17px] w-[17px] rounded-[5px] shadow-[inset_0_0_0_1px_rgba(0,0,0,.12)]"
-          style={{ background: value }}
-        />
-        <span className={`${MONO} text-[8px] text-[#7A8781]`}>
-          {value.toUpperCase()}
-        </span>
-      </div>
-    </div>
+      </span>
+    </label>
   );
 }
 
-function Customizer({
+function StyleControls({
   fg,
   bg,
   ecc,
@@ -897,27 +843,12 @@ function Customizer({
   onSizeChange: (value: number) => void;
   onPresetChange: (value: number) => void;
 }) {
-  const sliderProgress = ((size - 150) / 850) * 100;
+  const progress = ((size - 150) / 850) * 100;
 
   return (
-    <Panel className="p-[18px] max-[450px]:p-[13px]">
-      <SectionHeader
-        number="02"
-        eyebrow="APPEARANCE"
-        title="Make it yours"
-        description="Tune the visual style without compromising scan reliability."
-      />
-
-      <div className="mb-5">
-        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
-          <div>
-            <span className={CONTROL_TITLE}>Color theme</span>
-            <span className={CONTROL_SUB}>Quick presets</span>
-          </div>
-          <span className={CONTROL_META}>8 STYLES</span>
-        </div>
-
-        <div className="grid grid-cols-8 gap-[7px]">
+    <>
+      <SettingRow title="Colors">
+        <div className="mb-3 grid grid-cols-8 gap-2">
           {PRESETS.map((item, index) => {
             const active = preset === index;
             return (
@@ -925,7 +856,7 @@ function Customizer({
                 key={item.name}
                 type="button"
                 title={item.name}
-                aria-label={`Use ${item.name} theme`}
+                aria-label={`${item.name} colors`}
                 aria-pressed={active}
                 onClick={() => onPresetChange(index)}
                 style={
@@ -934,41 +865,27 @@ function Customizer({
                     "--preset-bg": item.bg,
                   } as CSSProperties
                 }
-                className={`relative aspect-square cursor-pointer overflow-hidden rounded-[11px] border border-white/[0.06] bg-[linear-gradient(135deg,var(--preset-fg)_50%,var(--preset-bg)_50%)] p-0 transition hover:scale-[1.055] ${
-                  active ? "shadow-[0_0_0_2px_#00C896,0_0_0_4px_#101615]" : ""
+                className={`aspect-square cursor-pointer rounded-md border border-black/10 bg-[linear-gradient(135deg,var(--preset-fg)_50%,var(--preset-bg)_50%)] transition-shadow ${FOCUS} ${
+                  active
+                    ? "ring-2 ring-[#1F2A56] ring-offset-2 ring-offset-white"
+                    : "hover:ring-2 hover:ring-[#CFC8B8] hover:ring-offset-2 hover:ring-offset-white"
                 }`}
-              >
-                {active && (
-                  <span className="absolute inset-0 m-auto flex h-[19px] w-[19px] items-center justify-center rounded-full bg-[#00C896] text-[#04130E] shadow-[0_3px_10px_rgba(0,0,0,.35)]">
-                    <Icon name="check" size={11} strokeWidth={2.5} />
-                  </span>
-                )}
-              </button>
+              />
             );
           })}
         </div>
-      </div>
 
-      <div className="mb-[19px] grid grid-cols-2 gap-[9px] max-[450px]:grid-cols-1">
-        <ColorPicker label="QR color" value={fg} onChange={onFgChange} />
-        <ColorPicker label="Background" value={bg} onChange={onBgChange} />
-      </div>
-
-      <div className={DIVIDER} />
-
-      <div className="mb-5">
-        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
-          <div>
-            <span className={CONTROL_TITLE}>Output resolution</span>
-            <span className={CONTROL_SUB}>Higher is better for print</span>
-          </div>
-          <span
-            className={`${MONO} rounded-lg border border-[rgba(0,200,150,.13)] bg-[rgba(0,200,150,.045)] px-2 py-1.5 text-[9px] text-[#00C896]`}
-          >
-            {size}px
-          </span>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <ColorField label="Code" value={fg} onChange={onFgChange} />
+          <ColorField label="Background" value={bg} onChange={onBgChange} />
         </div>
+      </SettingRow>
 
+      <SettingRow
+        title="Size"
+        note="Larger files stay sharp when printed."
+        value={`${size} px`}
+      >
         <input
           className={RANGE}
           type="range"
@@ -977,73 +894,30 @@ function Customizer({
           step="50"
           value={size}
           onChange={(e) => onSizeChange(Number(e.target.value))}
-          style={{ "--range-progress": `${sliderProgress}%` } as CSSProperties}
-          aria-label="Output resolution"
+          style={{ "--range-progress": `${progress}%` } as CSSProperties}
+          aria-label="Output size in pixels"
         />
+      </SettingRow>
 
-        <div
-          className={`${MONO} mt-1.5 flex justify-between text-[7px] text-[#3F4A46]`}
-        >
-          <span>150 px</span>
-          <span>1000 px</span>
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
-          <div>
-            <span className={CONTROL_TITLE}>Error correction</span>
-            <span className={CONTROL_SUB}>Protects against damage</span>
-          </div>
-          <span className={CONTROL_META}>
-            {ECC_LEVELS[ecc].recovery} RECOVERY
-          </span>
-        </div>
-
-        <div className="grid grid-cols-4 gap-[7px] max-[450px]:gap-[5px]">
-          {(Object.keys(ECC_LEVELS) as ECCLevel[]).map((key) => {
-            const item = ECC_LEVELS[key];
-            const active = ecc === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={active}
-                onClick={() => onEccChange(key)}
-                className={`relative flex min-h-[61px] cursor-pointer flex-col items-start justify-center rounded-[11px] border px-[7px] py-[9px] transition max-[450px]:min-h-14 ${
-                  active
-                    ? "border-[#344A42] bg-[rgba(0,200,150,.055)] text-[#F0F5F2] shadow-[inset_0_0_0_1px_rgba(0,200,150,.035)]"
-                    : "border-[#1D2724] bg-[#090E0D] text-[#65726D] hover:border-[#34403B] hover:text-[#C8D0CD]"
-                }`}
-              >
-                <span className={`${MONO} text-xs font-bold`}>{key}</span>
-                <span
-                  className={`mt-[3px] text-[8px] ${
-                    active ? "text-[#6E8179]" : "text-[#4F5B56]"
-                  }`}
-                >
-                  {item.name}
-                </span>
-                {active && (
-                  <span className="absolute right-2 top-2 h-[5px] w-[5px] rounded-full bg-[#00C896] shadow-[0_0_8px_#00C896]" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-2.5 flex items-center gap-[7px] text-[9px] text-[#5E6E67]">
-          <span className="text-[#00C896]">
-            <Icon name="shield" size={15} />
-          </span>
-          <span>{ECC_LEVELS[ecc].description}</span>
-        </div>
-      </div>
-    </Panel>
+      <SettingRow
+        title="Error correction"
+        note={`${ECC_LEVELS[ecc].description} Scans with up to ${ECC_LEVELS[ecc].recovery} of the code damaged.`}
+      >
+        <Segmented<ECCLevel>
+          label="Error correction level"
+          value={ecc}
+          onChange={onEccChange}
+          options={(Object.keys(ECC_LEVELS) as ECCLevel[]).map((key) => ({
+            id: key,
+            label: ECC_LEVELS[key].name,
+          }))}
+        />
+      </SettingRow>
+    </>
   );
 }
 
-function BrandingPanel({
+function BrandingControls({
   dotStyle,
   onDotStyleChange,
   logo,
@@ -1080,27 +954,14 @@ function BrandingPanel({
   const titleProgress = ((titleScale - 3) / 7) * 100;
 
   return (
-    // FIX: this panel previously had no horizontal padding (padding: 0 0 6px),
-    // which pushed the content against the edges and clipped the header/input.
-    <Panel className="p-[18px] max-[450px]:p-[13px]">
-      <SectionHeader
-        number="03"
-        eyebrow="BRANDING"
-        title="Logo, title & style"
-        description="Add your logo in the center and a title under the QR."
-      />
-
-      <div className="mb-5">
-        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
-          <div>
-            <span className={CONTROL_TITLE}>Logo</span>
-            <span className={CONTROL_SUB}>Shown in the QR center</span>
-          </div>
-          {logo && <span className={CONTROL_META}>{logoScale}% SIZE</span>}
-        </div>
-
-        <div className="mb-3 mt-1 flex items-center gap-3">
-          <div className="flex h-[58px] w-[58px] flex-none items-center justify-center overflow-hidden rounded-[14px] border border-dashed border-[#2F3B36] bg-[#0B100F] text-[#53605C]">
+    <>
+      <SettingRow
+        title="Logo"
+        note="Placed in the center of the code."
+        value={logo ? `${logoScale}%` : undefined}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-[#CFC8B8] bg-[#FAF8F3] text-[#77736A]">
             {logo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -1109,20 +970,20 @@ function BrandingPanel({
                 className="h-full w-full object-contain"
               />
             ) : (
-              <Icon name="image" size={20} />
+              <Icon name="image" size={22} />
             )}
           </div>
 
           <div className="flex flex-wrap gap-2">
             <label
-              className={`${BTN} border-[rgba(0,200,150,.28)] bg-[rgba(0,200,150,.06)] text-[#00C896]`}
+              className={`${BTN} ${BTN_SECONDARY} focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#1F2A56]`}
             >
-              <Icon name="upload" size={15} />
-              {logo ? "Change logo" : "Upload logo"}
+              <Icon name="upload" size={16} />
+              {logo ? "Replace" : "Upload logo"}
               <input
                 type="file"
                 accept="image/*"
-                className="hidden"
+                className="sr-only"
                 onChange={(e: ChangeEvent<HTMLInputElement>) => {
                   const file = e.target.files?.[0];
                   if (file) onLogoFile(file);
@@ -1134,20 +995,25 @@ function BrandingPanel({
             {logo && (
               <button
                 type="button"
-                className={`${BTN} hover:border-[rgba(255,90,90,.4)] hover:text-[#FF8A8A]`}
+                className={`${BTN} ${BTN_DANGER}`}
                 onClick={onLogoRemove}
               >
-                <Icon name="trash" size={14} />
+                <Icon name="trash" size={16} />
                 Remove
               </button>
             )}
           </div>
         </div>
 
-        {logoError && <div className={INLINE_ERROR}>{logoError}</div>}
+        {logoError && (
+          <div role="alert" className={`${NOTICE_ERROR} mt-3`}>
+            <Icon name="warning" size={16} className="mt-px" />
+            {logoError}
+          </div>
+        )}
 
         {logo && (
-          <>
+          <div className="mt-4 space-y-4">
             <input
               className={RANGE}
               type="range"
@@ -1162,127 +1028,82 @@ function BrandingPanel({
               aria-label="Logo size"
             />
 
-            <Checkbox
-              checked={logoPlate}
-              onChange={onLogoPlateChange}
-              className="mt-3"
-            >
-              Background plate behind logo
+            <Checkbox checked={logoPlate} onChange={onLogoPlateChange}>
+              Add a background behind the logo
             </Checkbox>
 
             {ecc !== "H" && ecc !== "Q" && (
-              <div className={INLINE_WARNING}>
-                <span className="mt-px">
-                  <Icon name="shield" size={14} />
-                </span>
-                Use High or Maximum error correction so the QR still scans with
-                a logo.
+              <div className={NOTICE_WARN}>
+                <Icon name="warning" size={16} className="mt-px" />
+                Switch error correction to High or Maximum so the code still
+                scans with a logo.
               </div>
             )}
-          </>
-        )}
-      </div>
-
-      <div className={DIVIDER} />
-
-      <div className="mb-5">
-        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
-          <div>
-            <span className={CONTROL_TITLE}>Title</span>
-            <span className={CONTROL_SUB}>Printed below the QR</span>
           </div>
-          {title.trim() && (
-            <span className={CONTROL_META}>
-              {title.length}/{MAX_TITLE}
-            </span>
-          )}
-        </div>
+        )}
+      </SettingRow>
 
+      <SettingRow
+        title="Title"
+        note="Printed under the code."
+        value={title.trim() ? `${title.length}/${MAX_TITLE}` : undefined}
+      >
         <Input
           type="text"
           maxLength={MAX_TITLE}
-          placeholder="e.g. Scan to visit our website"
+          placeholder="Scan to see the menu"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          aria-label="QR title"
+          aria-label="Title under the QR code"
         />
 
         {title.trim() && (
-          <input
-            className={RANGE}
-            type="range"
-            min="3"
-            max="10"
-            step="0.5"
-            value={titleScale}
-            onChange={(e) => onTitleScaleChange(Number(e.target.value))}
-            style={{ "--range-progress": `${titleProgress}%` } as CSSProperties}
-            aria-label="Title size"
-          />
-        )}
-      </div>
-
-      <div className={DIVIDER} />
-
-      <div>
-        <div className="mb-2.5 flex items-center justify-between gap-[15px]">
-          <div>
-            <span className={CONTROL_TITLE}>Dot style</span>
-            <span className={CONTROL_SUB}>Shape of the QR modules</span>
+          <div className="mt-4">
+            <input
+              className={RANGE}
+              type="range"
+              min="3"
+              max="10"
+              step="0.5"
+              value={titleScale}
+              onChange={(e) => onTitleScaleChange(Number(e.target.value))}
+              style={
+                { "--range-progress": `${titleProgress}%` } as CSSProperties
+              }
+              aria-label="Title size"
+            />
           </div>
-        </div>
+        )}
+      </SettingRow>
 
-        <div className="mt-1 grid grid-cols-3 gap-2">
-          {DOT_STYLES.map((item) => {
-            const active = dotStyle === item.id;
-            const shape =
-              item.id === "rounded"
-                ? "[&>i]:rounded-[3px]"
-                : item.id === "dots"
-                  ? "[&>i]:rounded-full"
-                  : "";
-            return (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => onDotStyleChange(item.id)}
-                className={`flex cursor-pointer flex-col items-center gap-2 rounded-[13px] border px-1.5 pb-2.5 pt-[11px] text-[11px] font-semibold transition ${
-                  active
-                    ? "border-[rgba(0,200,150,.5)] bg-[rgba(0,200,150,.07)] text-[#00C896]"
-                    : "border-[#1D2724] bg-[#0B100F] text-[#82908B] hover:border-[#33423C] hover:text-[#EDF3F0]"
-                }`}
-              >
-                <span
-                  className={`grid grid-cols-[repeat(2,9px)] gap-[3px] ${shape} [&>i]:h-[9px] [&>i]:w-[9px] [&>i]:bg-current`}
-                >
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                {item.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </Panel>
+      <SettingRow title="Dot shape">
+        <Segmented<DotStyle>
+          label="Dot shape"
+          value={dotStyle}
+          onChange={onDotStyleChange}
+          options={DOT_STYLES}
+        />
+      </SettingRow>
+    </>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Preview                                                              */
+/* ------------------------------------------------------------------ */
 
 function QRPreview({
   qrUrl,
   bg,
   size,
-  scanning,
   aspect,
+  error,
 }: {
   qrUrl: string | null;
   bg: string;
   size: number;
-  scanning: boolean;
   aspect: number;
+  error: string;
 }) {
   const [imageError, setImageError] = useState(false);
 
@@ -1294,257 +1115,47 @@ function QRPreview({
   const displaySize = Math.min(size, 340);
 
   return (
-    <div
-      className={`relative flex min-h-[530px] items-center justify-center overflow-hidden max-[1050px]:min-h-[490px] max-[680px]:min-h-[400px] max-[450px]:min-h-[350px] ${
-        hasQR
-          ? "bg-[#080D0C] bg-[radial-gradient(circle_at_center,rgba(0,200,150,.045),transparent_23rem)]"
-          : "bg-[#080D0C]"
-      }`}
-    >
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.018)_1px,transparent_1px)] bg-[size:24px_24px] opacity-65 [mask-image:linear-gradient(to_bottom,black,transparent_85%)]" />
-
-      <div className="pointer-events-none absolute left-1/2 top-[-220px] h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-[rgba(0,200,150,.055)] blur-[80px]" />
-
+    <div className="flex min-h-[320px] items-center justify-center bg-[#EFEBE0] p-6 sm:min-h-[400px] sm:p-10 print:min-h-0 print:bg-white">
       {hasQR && qrUrl ? (
-        <div className="relative z-[2] flex flex-col items-center">
-          <div
-            className="relative animate-[qrAppear_.4s_cubic-bezier(.16,1,.3,1)] rounded-[21px] p-[17px] shadow-[0_0_0_1px_rgba(255,255,255,.09),0_35px_100px_rgba(0,0,0,.58),0_10px_30px_rgba(0,0,0,.32)] motion-reduce:animate-none max-[680px]:rounded-[17px] max-[680px]:p-3"
-            style={{ background: bg }}
-          >
-            <div className="pointer-events-none absolute -left-[7px] -top-[7px] z-[3] h-6 w-6 rounded-tl-[5px] border-l-2 border-t-2 border-[#00C896]" />
-            <div className="pointer-events-none absolute -right-[7px] -top-[7px] z-[3] h-6 w-6 rounded-tr-[5px] border-r-2 border-t-2 border-[#00C896]" />
-            <div className="pointer-events-none absolute -bottom-[7px] -left-[7px] z-[3] h-6 w-6 rounded-bl-[5px] border-b-2 border-l-2 border-[#00C896]" />
-            <div className="pointer-events-none absolute -bottom-[7px] -right-[7px] z-[3] h-6 w-6 rounded-br-[5px] border-b-2 border-r-2 border-[#00C896]" />
-
-            <div className="relative overflow-hidden rounded leading-[0]">
-              {scanning && (
-                <div className="absolute inset-x-0 top-0 z-[5] h-0.5 animate-[scan_.75s_ease-out_forwards] bg-[linear-gradient(90deg,transparent,#00C896,transparent)] shadow-[0_0_10px_#00C896,0_0_28px_rgba(0,200,150,.5)] motion-reduce:animate-none" />
-              )}
-
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                key={qrUrl}
-                src={qrUrl}
-                alt="Generated QR code preview"
-                width={displaySize}
-                height={Math.round(displaySize * aspect)}
-                className="block h-auto max-w-[min(340px,62vw)] rounded-sm max-[1050px]:max-w-[min(300px,50vw)] max-[680px]:max-w-[260px] max-[450px]:max-w-[225px]"
-                onError={() => setImageError(true)}
-              />
-            </div>
-          </div>
-
-          <div
-            className={`${MONO} mt-[18px] flex items-center gap-[7px] rounded-full border border-[rgba(0,200,150,.13)] bg-[rgba(0,200,150,.045)] px-2.5 py-[7px] text-[7px] tracking-[.1em] text-[#69A997]`}
-          >
-            <span className="h-[5px] w-[5px] rounded-full bg-[#00C896] shadow-[0_0_9px_#00C896]" />
-            LIVE PREVIEW
-          </div>
+        <div
+          className="rounded-lg border border-black/10 p-4 shadow-[0_1px_3px_rgba(27,26,23,0.08)] print:border-0 print:shadow-none"
+          style={{ background: bg }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            key={qrUrl}
+            src={qrUrl}
+            alt="Generated QR code"
+            width={displaySize}
+            height={Math.round(displaySize * aspect)}
+            className="block h-auto max-w-full"
+            style={{ maxWidth: "min(340px, 100%)" }}
+            onError={() => setImageError(true)}
+          />
         </div>
       ) : (
-        <div className="relative z-[2] max-w-[310px] p-[30px] text-center">
-          <div className="relative mx-auto mb-[22px] flex h-28 w-28 items-center justify-center rounded-[27px] border border-[#202B27] bg-[#0D1311] shadow-[0_25px_55px_rgba(0,0,0,.25),inset_0_1px_0_rgba(255,255,255,.025)]">
-            <div className="absolute inset-[13px] rounded-[18px] border border-dashed border-[#2B3833]" />
-            <QRLogo size={58} accent="#394642" />
-            <div className="absolute -right-[7px] -top-[7px] flex h-[29px] w-[29px] items-center justify-center rounded-[9px] border border-[#293630] bg-[#111815] text-[#00C896]">
-              <Icon name="sparkles" size={14} />
-            </div>
-          </div>
-
-          <h3 className="m-0 text-[13px] font-semibold text-[#C8D1CD]">
-            Your QR appears here
-          </h3>
-          <p className="mx-auto mt-[7px] text-[10px] leading-[1.65] text-[#56635E]">
-            Choose a format and enter your content to generate a live preview.
+        <div className="max-w-[280px] text-center">
+          <Icon
+            name={error ? "warning" : "qr"}
+            size={36}
+            className={error ? "text-[#B42318]" : "text-[#A9A292]"}
+          />
+          <p className="mt-3 text-sm font-medium text-[#1B1A17]">
+            {error ? "This code can’t be made yet" : "No preview yet"}
           </p>
-
-          <div className="mt-[17px] inline-flex items-center gap-1.5 rounded-lg border border-[#1C2723] bg-white/[0.012] px-[9px] py-[7px] text-[8px] text-[#4F5C56]">
-            <span className="text-[#00C896]">
-              <Icon name="bolt" size={13} />
-            </span>
-            Updates automatically as you type
-          </div>
+          <p className="mt-1 text-[13px] leading-relaxed text-[#77736A]">
+            {error ||
+              "Enter your content on the left and the QR code appears here."}
+          </p>
         </div>
       )}
     </div>
   );
 }
 
-function StatusBar({
-  content,
-  size,
-  ecc,
-}: {
-  content: string;
-  size: number;
-  ecc: ECCLevel;
-}) {
-  const preview = content.length > 80 ? `${content.slice(0, 80)}…` : content;
-
-  return (
-    <div
-      className={`${MONO} flex min-h-[39px] items-center gap-[9px] border-t border-[#1B2421] bg-[#0A0F0E] px-3.5 text-[8px] text-[#52605A]`}
-    >
-      <div className="flex items-center gap-1.5 font-semibold text-[#789089]">
-        <span className="h-[5px] w-[5px] rounded-full bg-[#00C896] shadow-[0_0_0_3px_rgba(0,200,150,.07)]" />
-        READY
-      </div>
-
-      <span className="text-[#29342F] max-[450px]:hidden">/</span>
-
-      <span className="shrink-0 max-[450px]:hidden">
-        {size}px · ECC {ecc}
-      </span>
-
-      <span className="text-[#29342F]">/</span>
-
-      <span className="truncate text-[#46534D]" title={content}>
-        {preview}
-      </span>
-    </div>
-  );
-}
-
-function ActionBar({
-  disabled,
-  downloading,
-  copied,
-  saved,
-  autoSave,
-  onDownloadPng,
-  onDownloadSvg,
-  onCopyImage,
-  onSave,
-  onAutoSaveChange,
-}: {
-  disabled: boolean;
-  downloading: boolean;
-  copied: boolean;
-  saved: boolean;
-  autoSave: boolean;
-  onDownloadPng: () => void;
-  onDownloadSvg: () => void;
-  onCopyImage: () => void;
-  onSave: () => void;
-  onAutoSaveChange: (value: boolean) => void;
-}) {
-  const actionBase =
-    "flex min-h-[43px] cursor-pointer items-center justify-center gap-2 rounded-xl transition disabled:cursor-not-allowed disabled:opacity-30";
-  const outlineAction =
-    "border border-[#26312D] bg-[#0B100F] text-[10px] font-semibold text-[#7A8781] hover:enabled:border-[#394640] hover:enabled:bg-[#101714] hover:enabled:text-[#EDF3F0]";
-
-  return (
-    <>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_44px] gap-[7px] p-[13px] max-[450px]:grid-cols-[minmax(0,1fr)_42px]">
-        <button
-          type="button"
-          disabled={disabled || downloading}
-          onClick={onDownloadPng}
-          className={`${actionBase} border-0 bg-[linear-gradient(135deg,#00E0A8,#00C896)] px-[15px] text-[11px] font-bold text-[#03130E] shadow-[0_10px_30px_rgba(0,200,150,.12),inset_0_1px_0_rgba(255,255,255,.2)] hover:enabled:-translate-y-px hover:enabled:shadow-[0_14px_35px_rgba(0,200,150,.18),inset_0_1px_0_rgba(255,255,255,.2)] max-[450px]:col-start-1 max-[450px]:row-start-1`}
-        >
-          <span className="flex h-[25px] w-[25px] items-center justify-center rounded-[7px] bg-black/[0.08]">
-            <Icon name="download" size={16} />
-          </span>
-          {downloading ? "Preparing file..." : "Download PNG"}
-          {!downloading && <Icon name="arrow" size={15} strokeWidth={2} />}
-        </button>
-
-        <button
-          type="button"
-          disabled={disabled || downloading}
-          onClick={onDownloadSvg}
-          className={`${actionBase} ${outlineAction} px-[13px] max-[450px]:col-span-full max-[450px]:row-start-2`}
-        >
-          <Icon name="qr" size={16} />
-          SVG
-        </button>
-
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onCopyImage}
-          title="Copy QR image"
-          aria-label="Copy QR image"
-          className={`${actionBase} max-[450px]:col-start-2 max-[450px]:row-start-1 ${
-            copied
-              ? "border border-[rgba(0,200,150,.25)] bg-[rgba(0,200,150,.06)] text-[#00C896]"
-              : outlineAction
-          }`}
-        >
-          <Icon name={copied ? "check" : "copy"} size={17} />
-        </button>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2.5 px-[13px] pb-3.5">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onSave}
-          className={`${BTN} ${
-            saved
-              ? "border-[rgba(0,200,150,.3)] bg-[rgba(0,200,150,.07)] text-[#00C896]"
-              : ""
-          }`}
-        >
-          <Icon name={saved ? "check" : "save"} size={15} />
-          {saved ? "Saved to history" : "Save to history"}
-        </button>
-
-        <Checkbox checked={autoSave} onChange={onAutoSaveChange}>
-          Auto-save on download
-        </Checkbox>
-      </div>
-    </>
-  );
-}
-
-function QualityCard({ ecc }: { ecc: ECCLevel }) {
-  return (
-    <div className="mt-3 flex gap-[11px] rounded-2xl border border-[rgba(0,200,150,.12)] bg-[linear-gradient(135deg,rgba(0,200,150,.055),rgba(0,200,150,.018))] p-3.5">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[rgba(0,200,150,.075)] text-[#00C896]">
-        <Icon name="sparkles" size={17} />
-      </div>
-
-      <div className="min-w-0">
-        <div
-          className={`${MONO} flex items-center gap-2 text-[8px] font-bold tracking-[.12em] text-[#00C896]`}
-        >
-          <span>PRO QUALITY</span>
-          <span className="h-px w-[25px] bg-[rgba(0,200,150,.22)]" />
-        </div>
-
-        <p className="mt-[5px] text-[9px] leading-[1.55] text-[#678078]">
-          ECC <strong className="text-[#A4C4BA]">{ecc}</strong> is active. Use
-          High or Maximum for printed QR codes and logo overlays.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  text,
-}: {
-  icon: "bolt" | "shield" | "printer";
-  title: string;
-  text: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-[13px] border border-[#1C2622] bg-[#0C1110] p-3 max-[680px]:p-[9px]">
-      <div className="flex h-[25px] w-[25px] items-center justify-center rounded-lg bg-white/[0.025] text-[#66756E]">
-        <Icon name={icon} size={15} />
-      </div>
-      <div className="mt-[9px] text-[9px] font-semibold text-[#AAB5B0] max-[680px]:text-[8px]">
-        {title}
-      </div>
-      <div className="mt-[3px] text-[8px] text-[#4D5954] max-[680px]:text-[7px]">
-        {text}
-      </div>
-    </div>
-  );
-}
+/* ------------------------------------------------------------------ */
+/* History                                                              */
+/* ------------------------------------------------------------------ */
 
 function HistoryPanel({
   items,
@@ -1592,23 +1203,24 @@ function HistoryPanel({
   );
 
   return (
-    <Panel className="mt-4 p-[18px]">
-      <div className="flex items-start justify-between gap-3.5">
-        <div className="flex-1">
-          <SectionHeader
-            number="04"
-            eyebrow="HISTORY"
-            title="Saved QR codes"
-            description="Stored only in this browser. Click a card to open it again."
-          />
+    <section
+      id="saved-codes"
+      className={`${CARD} mt-6 scroll-mt-6 p-5 sm:p-6 print:hidden`}
+    >
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-[#1B1A17]">
+            Saved codes
+          </h2>
+          <p className="mt-0.5 text-[13px] text-[#77736A]">
+            Kept in this browser only. Select a code to edit it again.
+          </p>
         </div>
 
         {items.length > 0 && (
           <button
             type="button"
-            className={`${BTN} flex-none ${
-              confirmClear ? "border-[rgba(255,90,90,.4)] text-[#FF8A8A]" : ""
-            }`}
+            className={`${BTN} ${confirmClear ? BTN_DANGER : BTN_SECONDARY}`}
             onClick={() => {
               if (confirmClear) {
                 onClear();
@@ -1619,80 +1231,84 @@ function HistoryPanel({
               }
             }}
           >
-            <Icon name="trash" size={14} />
-            {confirmClear ? "Click again to clear all" : "Clear all"}
+            <Icon name="trash" size={16} />
+            {confirmClear ? "Select again to delete all" : "Delete all"}
           </button>
         )}
       </div>
 
-      {notice && <div className={INLINE_ERROR}>{notice}</div>}
+      {notice && (
+        <div role="alert" className={`${NOTICE_ERROR} mb-4`}>
+          <Icon name="warning" size={16} className="mt-px" />
+          {notice}
+        </div>
+      )}
 
       {items.length === 0 ? (
-        <div className="flex flex-col items-center gap-1 px-[18px] pb-2.5 pt-[26px] text-center text-[#53605C]">
-          <Icon name="history" size={22} />
-          <p className="mt-1.5 text-[13px] font-semibold text-[#82908B]">
-            No saved QR codes yet.
+        <div className="flex flex-col items-center rounded-lg border border-dashed border-[#CFC8B8] bg-[#FAF8F3] px-6 py-10 text-center">
+          <Icon name="history" size={28} className="text-[#A9A292]" />
+          <p className="mt-3 text-sm font-medium text-[#1B1A17]">
+            Nothing saved yet
           </p>
-          <span className="text-[11px]">
-            Use “Save to history” under the preview.
-          </span>
+          <p className="mt-1 text-[13px] text-[#77736A]">
+            Use Save under the preview to keep a code here.
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {cards.map(({ item, data, thumb }) => (
-            <div
+            <li
               key={item.id}
-              className="group relative rounded-[15px] border border-[#1D2724] bg-[#0B100F] transition hover:-translate-y-0.5 hover:border-[rgba(0,200,150,.4)]"
+              className="group relative rounded-lg border border-[#E3DED1] bg-white transition-colors hover:border-[#A9A292]"
             >
               <button
                 type="button"
-                className="flex w-full cursor-pointer flex-col gap-1 border-0 bg-transparent p-[9px] text-left text-inherit"
+                className={`flex w-full cursor-pointer flex-col gap-1 rounded-lg p-2.5 text-left ${FOCUS}`}
                 onClick={() => onLoad(item)}
-                title="Open this QR"
               >
                 <span
-                  className="mb-1 flex aspect-square items-center justify-center overflow-hidden rounded-[9px] text-[#53605C]"
+                  className="mb-1.5 flex aspect-square items-center justify-center overflow-hidden rounded-md border border-[#EEEAE0] text-[#77736A]"
                   style={{ background: item.bg }}
                 >
                   {thumb ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={thumb.dataUrl}
-                      alt="Saved QR preview"
+                      alt=""
                       className="h-full w-full object-contain"
                     />
                   ) : (
-                    <Icon name="qr" size={24} />
+                    <Icon name="image" size={22} />
                   )}
                 </span>
 
-                <span className="truncate text-[11.5px] font-semibold text-[#E4ECE8]">
+                <span className="truncate text-[13px] font-medium text-[#1B1A17]">
                   {item.title.trim() || data || "Untitled"}
                 </span>
-
-                <span
-                  className={`${MONO} text-[9px] tracking-[.04em] text-[#5F6C67]`}
-                >
+                <span className="text-xs text-[#77736A]">
                   {item.type} · {new Date(item.createdAt).toLocaleDateString()}
                 </span>
               </button>
 
               <button
                 type="button"
-                className="absolute right-3.5 top-3.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded-lg border border-black/[0.18] bg-[rgba(10,14,13,.72)] text-white opacity-0 transition hover:bg-[rgba(220,60,60,.9)] focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                 onClick={() => onDelete(item.id)}
-                aria-label="Delete from history"
-                title="Delete"
+                aria-label="Delete this saved code"
+                className={`absolute right-4 top-4 flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-[#CFC8B8] bg-white text-[#4A4740] opacity-0 transition hover:border-[#F1A9A0] hover:bg-[#FEF3F2] hover:text-[#B42318] focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100 ${FOCUS}`}
               >
-                <Icon name="close" size={13} strokeWidth={2.2} />
+                <Icon name="close" size={16} />
               </button>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-    </Panel>
+    </section>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Page                                                                 */
+/* ------------------------------------------------------------------ */
 
 export default function QRGenerator() {
   const [type, setType] = useState<QRType>("URL");
@@ -1705,7 +1321,6 @@ export default function QRGenerator() {
   const [preset, setPreset] = useState(0);
 
   const [content, setContent] = useState("");
-  const [scanning, setScanning] = useState(false);
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
@@ -1723,9 +1338,22 @@ export default function QRGenerator() {
   const [autoSave, setAutoSave] = useState(false);
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const scanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [toast, setToast] = useState<{
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback(
+    (message: string, tone: "success" | "error" = "success") => {
+      setToast({ message, tone });
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      toastTimer.current = setTimeout(() => setToast(null), 2800);
+    },
+    [],
+  );
 
   const invalid = useMemo(() => {
     if (type === "URL") return Boolean(fields.url) && !isValidURL(fields.url);
@@ -1734,36 +1362,19 @@ export default function QRGenerator() {
     return false;
   }, [type, fields]);
 
-  const triggerScan = useCallback(() => {
-    setScanning(false);
-    if (scanTimer.current) clearTimeout(scanTimer.current);
-
-    scanTimer.current = setTimeout(() => {
-      setScanning(true);
-      scanTimer.current = setTimeout(() => setScanning(false), 750);
-    }, 30);
-  }, []);
-
   useEffect(() => {
     const timer = setTimeout(() => {
-      const data = buildQRData(type, fields);
-      setContent(data);
-      if (data && !invalid) triggerScan();
+      setContent(buildQRData(type, fields));
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [type, fields, invalid, triggerScan]);
-
-  useEffect(() => {
-    if (!content || invalid) return;
-    triggerScan();
-  }, [fg, bg, ecc, size, content, invalid, triggerScan]);
+  }, [type, fields]);
 
   useEffect(() => {
     return () => {
-      if (scanTimer.current) clearTimeout(scanTimer.current);
       if (copyTimer.current) clearTimeout(copyTimer.current);
       if (savedTimer.current) clearTimeout(savedTimer.current);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, []);
 
@@ -1812,6 +1423,7 @@ export default function QRGenerator() {
   ]);
 
   const hasContent = Boolean(content) && !invalid && Boolean(qr);
+  const activeType = QR_TYPES.find((item) => item.id === type) ?? QR_TYPES[0];
 
   const handleTypeChange = useCallback((newType: QRType) => {
     setType(newType);
@@ -1839,7 +1451,7 @@ export default function QRGenerator() {
       setHistoryNotice("");
     } catch {
       setHistoryNotice(
-        "Browser storage is full. Delete a few saved items (large logos take space).",
+        "Browser storage is full. Delete a few saved codes to make room (logos take the most space).",
       );
     }
   }, []);
@@ -1868,9 +1480,10 @@ export default function QRGenerator() {
 
   const flashSaved = useCallback(() => {
     setSaved(true);
+    showToast("Saved to history");
     if (savedTimer.current) clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaved(false), 2000);
-  }, []);
+  }, [showToast]);
 
   const saveToHistory = useCallback(() => {
     if (!content || invalid) return;
@@ -2012,13 +1625,18 @@ export default function QRGenerator() {
         setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 
         if (autoSave) saveToHistory();
+        showToast(
+          autoSave
+            ? `${format.toUpperCase()} downloaded and saved`
+            : `${format.toUpperCase()} downloaded`,
+        );
       } catch {
-        setLogoError("Download failed. Please try again.");
+        showToast("Download failed. Please try again.", "error");
       } finally {
         setDownloading(false);
       }
     },
-    [qr, title, type, size, autoSave, saveToHistory],
+    [qr, title, type, size, autoSave, saveToHistory, showToast],
   );
 
   const handleCopyImage = useCallback(async () => {
@@ -2032,257 +1650,251 @@ export default function QRGenerator() {
       ]);
 
       setCopied(true);
+      showToast("Image copied to clipboard");
       if (copyTimer.current) clearTimeout(copyTimer.current);
       copyTimer.current = setTimeout(() => setCopied(false), 2200);
     } catch {
       setCopied(false);
+      showToast(
+        "Couldn’t copy. Your browser may block clipboard access.",
+        "error",
+      );
     }
-  }, [qr]);
+  }, [qr, showToast]);
+
+  const encodedPreview =
+    content.length > 90 ? `${content.slice(0, 90)}…` : content;
 
   return (
-    <main className="min-h-screen bg-[#060908] bg-[radial-gradient(circle_at_50%_-10%,rgba(0,200,150,.115),transparent_31rem),radial-gradient(circle_at_95%_40%,rgba(0,200,150,.045),transparent_26rem)] font-[Inter,ui-sans-serif,system-ui,-apple-system,'Segoe_UI',sans-serif] text-[#F3F7F5] [&_*]:box-border">
-      {/* Only keyframes live here; Tailwind has no built-in equivalent. */}
-      <style>{`
-        @keyframes qrAppear {
-          from { opacity: 0; transform: scale(.9) translateY(8px); }
-          70% { opacity: 1; transform: scale(1.015) translateY(0); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        @keyframes scan {
-          from { top: 0; opacity: 0; }
-          12% { opacity: 1; }
-          to { top: 100%; opacity: 0; }
-        }
-      `}</style>
+    <main className="min-h-screen bg-[#F6F4EE] font-[Inter,ui-sans-serif,system-ui,-apple-system,'Segoe_UI',sans-serif] text-sm text-[#1B1A17] antialiased [&_*]:box-border">
+      <header className="border-b border-[#E3DED1] bg-[#F6F4EE] print:hidden">
+        <div className="mx-auto flex h-16 w-[min(1120px,calc(100%-32px))] items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1F2A56] text-white">
+              <Icon name="qr" size={20} />
+            </span>
+            <h1 className="text-base font-semibold tracking-tight">
+              QR Studio
+            </h1>
+          </div>
 
-      <div className="mx-auto w-[min(1220px,calc(100%-32px))] max-[680px]:w-[min(100%-20px,1220px)]">
-        <header className="pb-6 pt-7 max-[680px]:pb-4 max-[680px]:pt-[18px]">
-          <div className="flex items-center justify-between gap-5">
-            <div className="flex items-center gap-[13px]">
-              <div className="flex h-[46px] w-[46px] items-center justify-center rounded-[15px] border border-[#293530] bg-[linear-gradient(145deg,#151D1A,#0A0F0D)] shadow-[0_15px_35px_rgba(0,0,0,.28),inset_0_1px_0_rgba(255,255,255,.04)] max-[680px]:h-[42px] max-[680px]:w-[42px]">
-                <QRLogo size={27} />
-              </div>
+          <button
+            type="button"
+            className={`${BTN} ${BTN_SECONDARY}`}
+            onClick={() =>
+              document
+                .getElementById("saved-codes")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }
+          >
+            <Icon name="history" size={16} />
+            Saved codes
+            {history.length > 0 && (
+              <span className="text-[13px] tabular-nums text-[#77736A]">
+                {history.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </header>
 
-              <div>
-                <div className="flex items-center gap-[9px]">
-                  <h1
-                    className={`${MONO} m-0 text-base font-semibold tracking-[-.03em] text-[#F4F8F6] max-[450px]:text-sm`}
-                  >
-                    QR Studio
-                  </h1>
-                  <span
-                    className={`${MONO} rounded-md bg-[#00C896] px-[7px] py-1 text-[8px] font-extrabold tracking-[.12em] text-[#03130E] shadow-[0_0_20px_rgba(0,200,150,.16)] max-[450px]:text-[7px]`}
-                  >
-                    PRO
-                  </span>
-                </div>
+      <div className="mx-auto w-[min(1120px,calc(100%-32px))] py-6 sm:py-8">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
+          {/* ---------- Left: inputs ---------- */}
+          <div className="flex min-w-0 flex-col gap-4 print:hidden">
+            <section className={CARD}>
+              <TypeTabs value={type} onChange={handleTypeChange} />
 
-                <p className="mt-1 text-[11px] text-[#5F6C67] max-[450px]:text-[9px]">
-                  Production-ready QR codes, beautifully made.
+              <div
+                id="content-panel"
+                role="tabpanel"
+                aria-labelledby={`tab-${type}`}
+                className="p-5"
+              >
+                <h2 className="text-base font-semibold">{activeType.label}</h2>
+                <p className="mb-5 mt-0.5 text-[13px] text-[#77736A]">
+                  {activeType.description}
                 </p>
+
+                {type === "URL" && (
+                  <URLForm
+                    fields={fields}
+                    onChange={setFields}
+                    invalid={invalid}
+                  />
+                )}
+                {type === "Text" && (
+                  <TextForm fields={fields} onChange={setFields} />
+                )}
+                {type === "Email" && (
+                  <EmailForm
+                    fields={fields}
+                    onChange={setFields}
+                    invalid={invalid}
+                  />
+                )}
+                {type === "Phone" && (
+                  <PhoneForm fields={fields} onChange={setFields} />
+                )}
+                {type === "WiFi" && (
+                  <WiFiForm fields={fields} onChange={setFields} />
+                )}
               </div>
-            </div>
+            </section>
 
-            <div
-              className={`${MONO} flex items-center gap-2 rounded-[11px] border border-[#1D2724] bg-[rgba(12,17,16,.78)] px-3 py-[9px] text-[9px] uppercase tracking-[.08em] text-[#68756F] max-[680px]:hidden`}
+            <section className={`${CARD} overflow-hidden`}>
+              <Disclosure
+                title="Style"
+                summary="Colors, size and error correction"
+                defaultOpen
+              >
+                <StyleControls
+                  fg={fg}
+                  bg={bg}
+                  ecc={ecc}
+                  size={size}
+                  preset={preset}
+                  onFgChange={(value) => {
+                    setFg(value);
+                    setPreset(-1);
+                  }}
+                  onBgChange={(value) => {
+                    setBg(value);
+                    setPreset(-1);
+                  }}
+                  onEccChange={setEcc}
+                  onSizeChange={setSize}
+                  onPresetChange={handlePreset}
+                />
+              </Disclosure>
+
+              <Disclosure
+                title="Logo, title and dots"
+                summary="Branding for the center and below the code"
+              >
+                <BrandingControls
+                  dotStyle={dotStyle}
+                  onDotStyleChange={setDotStyle}
+                  logo={logo}
+                  logoScale={logoScale}
+                  logoPlate={logoPlate}
+                  logoError={logoError}
+                  onLogoFile={handleLogoFile}
+                  onLogoRemove={() => {
+                    setLogo(null);
+                    setLogoError("");
+                  }}
+                  onLogoScaleChange={setLogoScale}
+                  onLogoPlateChange={setLogoPlate}
+                  title={title}
+                  titleScale={titleScale}
+                  onTitleChange={setTitle}
+                  onTitleScaleChange={setTitleScale}
+                  ecc={ecc}
+                />
+              </Disclosure>
+            </section>
+          </div>
+
+          {/* ---------- Right: preview ---------- */}
+          <div className="min-w-0 lg:sticky lg:top-6">
+            <section
+              className={`${CARD} overflow-hidden print:border-0 print:shadow-none`}
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-[#00C896] shadow-[0_0_10px_#00C896]" />
-              System online
-            </div>
-          </div>
-        </header>
-
-        <div className="grid grid-cols-[410px_minmax(0,1fr)] items-start gap-4 max-[1050px]:grid-cols-[360px_minmax(0,1fr)] max-[900px]:grid-cols-1">
-          <div className="flex min-w-0 flex-col gap-3 max-[900px]:grid max-[900px]:grid-cols-2 max-[900px]:items-start max-[680px]:grid-cols-1 max-[680px]:gap-2.5">
-            <TypeSelector value={type} onChange={handleTypeChange} />
-
-            <Panel className="p-[18px] max-[450px]:p-[13px]">
-              <SectionHeader
-                number="01"
-                eyebrow="CONTENT"
-                title={`Create ${type} QR`}
-                description={
-                  QR_TYPES.find((item) => item.id === type)?.description
-                }
-                badge={
-                  hasContent ? (
-                    <span
-                      className={`${MONO} whitespace-nowrap rounded-lg border border-[#1D2724] bg-[#0A0F0E] px-2 py-1.5 text-[8px] text-[#53605C]`}
-                    >
-                      {content.length} chars
-                    </span>
-                  ) : undefined
-                }
-              />
-
-              {type === "URL" && (
-                <URLForm
-                  fields={fields}
-                  onChange={setFields}
-                  invalid={invalid}
-                />
-              )}
-              {type === "Text" && (
-                <TextForm fields={fields} onChange={setFields} />
-              )}
-              {type === "Email" && (
-                <EmailForm
-                  fields={fields}
-                  onChange={setFields}
-                  invalid={invalid}
-                />
-              )}
-              {type === "Phone" && (
-                <PhoneForm fields={fields} onChange={setFields} />
-              )}
-              {type === "WiFi" && (
-                <WiFiForm fields={fields} onChange={setFields} />
-              )}
-
-              {hasContent && (
-                <div className="mt-[15px] flex items-center gap-2.5 rounded-xl border border-[rgba(0,200,150,.13)] bg-[rgba(0,200,150,.035)] p-2.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-[rgba(0,200,150,.08)] text-[#00C896]">
-                    <Icon name="check" size={13} strokeWidth={2.3} />
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="m-0 text-[10px] font-semibold text-[#B8C5C0]">
-                      Content ready
-                    </p>
-                    <p
-                      className={`${MONO} mt-[3px] max-w-[280px] truncate text-[8px] text-[#50605A]`}
-                    >
-                      {content}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </Panel>
-
-            <Customizer
-              fg={fg}
-              bg={bg}
-              ecc={ecc}
-              size={size}
-              preset={preset}
-              onFgChange={(value) => {
-                setFg(value);
-                setPreset(-1);
-              }}
-              onBgChange={(value) => {
-                setBg(value);
-                setPreset(-1);
-              }}
-              onEccChange={setEcc}
-              onSizeChange={setSize}
-              onPresetChange={handlePreset}
-            />
-
-            <BrandingPanel
-              dotStyle={dotStyle}
-              onDotStyleChange={setDotStyle}
-              logo={logo}
-              logoScale={logoScale}
-              logoPlate={logoPlate}
-              logoError={logoError}
-              onLogoFile={handleLogoFile}
-              onLogoRemove={() => {
-                setLogo(null);
-                setLogoError("");
-              }}
-              onLogoScaleChange={setLogoScale}
-              onLogoPlateChange={setLogoPlate}
-              title={title}
-              titleScale={titleScale}
-              onTitleChange={setTitle}
-              onTitleScaleChange={setTitleScale}
-              ecc={ecc}
-            />
-          </div>
-
-          <div className="sticky top-[18px] min-w-0 max-[900px]:static">
-            <Panel>
-              <div className="flex items-center justify-between gap-[15px] border-b border-[#1B2421] bg-[rgba(14,20,18,.82)] px-[17px] py-[15px] max-[680px]:p-3">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={`${MONO} flex h-[30px] w-[30px] items-center justify-center rounded-[9px] border border-[#24302B] bg-[rgba(0,200,150,.045)] text-[8px] text-[#00C896]`}
-                  >
-                    02
-                  </div>
-
-                  <div>
-                    <div
-                      className={`${MONO} text-[7px] tracking-[.15em] text-[#596660]`}
-                    >
-                      PREVIEW
-                    </div>
-                    <p className="mt-0.5 text-[11px] font-semibold text-[#C9D2CE]">
-                      Live QR canvas
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`${MONO} rounded-lg border border-[#242E2A] bg-[#111715] px-2 py-1.5 text-[7px] tracking-[.05em] text-[#68746F] max-[680px]:hidden`}
-                  >
-                    {type}
-                  </span>
-                  <span
-                    className={`${MONO} rounded-lg border border-[rgba(0,200,150,.12)] bg-[rgba(0,200,150,.045)] px-2 py-1.5 text-[7px] tracking-[.05em] text-[#67AF9D]`}
-                  >
-                    {size}px
-                  </span>
-                </div>
+              <div className="flex items-center justify-between gap-4 border-b border-[#E3DED1] px-5 py-3.5 print:hidden">
+                <h2 className="text-sm font-semibold">Preview</h2>
+                <p className="text-xs tabular-nums text-[#77736A]">
+                  {activeType.label} · {size} px · ECC {ecc}
+                </p>
               </div>
 
               <QRPreview
                 qrUrl={qr?.dataUrl ?? null}
                 bg={bg}
                 size={size}
-                scanning={scanning}
                 aspect={qr ? qr.height / qr.width : 1}
+                error={qrError}
               />
 
-              {qrError && (
-                <div className={`${INLINE_ERROR} mx-[13px] mb-1 mt-0`}>
-                  {qrError}
+              {hasContent && (
+                <div className="flex items-center justify-between gap-4 border-t border-[#E3DED1] px-5 py-2.5 text-xs text-[#77736A] print:hidden">
+                  <p className="min-w-0 truncate" title={content}>
+                    <span className="mr-1.5">Contains</span>
+                    <span className="text-[#4A4740]">{encodedPreview}</span>
+                  </p>
+                  <span className="shrink-0 tabular-nums">
+                    {content.length} chars
+                  </span>
                 </div>
               )}
 
-              {hasContent && (
-                <StatusBar content={content} size={size} ecc={ecc} />
-              )}
+              <div className="flex flex-wrap gap-2 border-t border-[#E3DED1] p-4 print:hidden">
+                <button
+                  type="button"
+                  className={`${BTN} ${BTN_PRIMARY}`}
+                  disabled={!hasContent || downloading}
+                  onClick={() => handleDownload("png")}
+                >
+                  <Icon
+                    name={downloading ? "loader" : "download"}
+                    size={16}
+                    className={downloading ? "animate-spin" : ""}
+                  />
+                  {downloading ? "Preparing…" : "Download PNG"}
+                </button>
 
-              <ActionBar
-                disabled={!hasContent}
-                downloading={downloading}
-                copied={copied}
-                saved={saved}
-                autoSave={autoSave}
-                onDownloadPng={() => handleDownload("png")}
-                onDownloadSvg={() => handleDownload("svg")}
-                onCopyImage={handleCopyImage}
-                onSave={saveToHistory}
-                onAutoSaveChange={handleAutoSaveChange}
-              />
-            </Panel>
+                <button
+                  type="button"
+                  className={`${BTN} ${BTN_SECONDARY}`}
+                  disabled={!hasContent || downloading}
+                  onClick={() => handleDownload("svg")}
+                >
+                  Download SVG
+                </button>
 
-            <QualityCard ecc={ecc} />
+                <button
+                  type="button"
+                  className={`${BTN} ${BTN_SECONDARY} px-3`}
+                  disabled={!hasContent}
+                  onClick={handleCopyImage}
+                  aria-label="Copy image"
+                  title="Copy image"
+                >
+                  <Icon name={copied ? "check" : "copy"} size={18} />
+                </button>
 
-            <div className="mt-3 grid grid-cols-3 gap-2 max-[680px]:gap-[5px]">
-              <FeatureCard icon="bolt" title="Instant" text="Live generation" />
-              <FeatureCard
-                icon="shield"
-                title="Reliable"
-                text={`${ecc} correction`}
-              />
-              <FeatureCard
-                icon="printer"
-                title="Print ready"
-                text={`${size}px output`}
-              />
-            </div>
+                <button
+                  type="button"
+                  className={`${BTN} ${BTN_SECONDARY} px-3`}
+                  disabled={!hasContent}
+                  onClick={() => window.print()}
+                  aria-label="Print"
+                  title="Print"
+                >
+                  <Icon name="printer" size={18} />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t border-[#E3DED1] bg-[#FAF8F3] px-4 py-3 print:hidden">
+                <button
+                  type="button"
+                  className={`${BTN} ${BTN_SECONDARY} h-9`}
+                  disabled={!hasContent}
+                  onClick={saveToHistory}
+                >
+                  <Icon name={saved ? "check" : "bookmark"} size={16} />
+                  {saved ? "Saved" : "Save"}
+                </button>
+
+                <Checkbox checked={autoSave} onChange={handleAutoSaveChange}>
+                  Save automatically when I download
+                </Checkbox>
+              </div>
+            </section>
+
+            <p className="mt-3 px-1 text-xs text-[#77736A] print:hidden">
+              Test the code with your phone before you print or publish it.
+            </p>
           </div>
         </div>
 
@@ -2293,13 +1905,27 @@ export default function QRGenerator() {
           onDelete={handleDeleteHistory}
           onClear={handleClearHistory}
         />
+      </div>
 
-        <footer className="flex items-center justify-between gap-5 pb-[18px] pt-6 text-[8px] text-[#38433F] max-[680px]:flex-col max-[680px]:pb-[15px] max-[680px]:text-center">
-          <span className={`${MONO} tracking-[.08em]`}>
-            QR STUDIO · DARK EDITION
-          </span>
-          <span>Always test your QR before publishing or printing.</span>
-        </footer>
+      {/* Toast */}
+      <div
+        role="status"
+        aria-live="polite"
+        className="pointer-events-none fixed inset-x-0 bottom-5 z-50 flex justify-center px-4 print:hidden"
+      >
+        {toast && (
+          <div
+            className={`pointer-events-auto flex max-w-md items-center gap-2.5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-white shadow-[0_8px_24px_rgba(27,26,23,0.18)] ${
+              toast.tone === "error" ? "bg-[#B42318]" : "bg-[#1B1A17]"
+            }`}
+          >
+            <Icon
+              name={toast.tone === "error" ? "warning" : "success"}
+              size={18}
+            />
+            {toast.message}
+          </div>
+        )}
       </div>
     </main>
   );
