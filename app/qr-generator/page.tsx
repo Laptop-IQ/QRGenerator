@@ -33,8 +33,26 @@ import {
   type DotStyle,
   type RenderResult,
 } from "./qr-render";
+import {
+  SOCIAL_LOGOS,
+  renderSocialLogo,
+  type SocialLogoId,
+} from "./social-logos";
 
-type QRType = "URL" | "Text" | "Email" | "Phone" | "WiFi";
+type QRType = "URL" | "Text" | "Email" | "Phone" | "WiFi" | "Social";
+type SocialPlatformId =
+  | "instagram"
+  | "facebook"
+  | "x"
+  | "linkedin"
+  | "youtube"
+  | "tiktok"
+  | "whatsapp"
+  | "telegram"
+  | "snapchat"
+  | "github"
+  | "pinterest"
+  | "threads";
 type ECCLevel = "L" | "M" | "Q" | "H";
 type DownloadFormat = "png" | "svg";
 
@@ -48,6 +66,8 @@ interface QRFields {
   ssid: string;
   password: string;
   security: "WPA" | "WEP" | "None";
+  socialPlatform: SocialPlatformId;
+  socialHandle: string;
 }
 
 interface HistoryItem {
@@ -121,6 +141,12 @@ const QR_TYPES: Array<{
     description: "Let people join a network without typing the password.",
     icon: "wifi",
   },
+  {
+    id: "Social",
+    label: "Social",
+    description: "Send people straight to your profile on a social network.",
+    icon: "share",
+  },
 ];
 
 const PRESETS: Preset[] = [
@@ -193,6 +219,162 @@ const NOTICE_WARN =
   "flex items-start gap-2 rounded-lg border border-[#FEDF89] bg-[#FFFAEB] px-3 py-2.5 text-[13px] leading-snug text-[#93370D]";
 
 /* ------------------------------------------------------------------ */
+/* Social platforms (Remix Icon brand glyphs; fill style when selected) */
+/* ------------------------------------------------------------------ */
+
+interface SocialPlatform {
+  id: SocialPlatformId;
+  label: string;
+  /** Profile URL prefix, shown in the input and used to build the link. */
+  base: string;
+  /** Text shown in the input prefix. */
+  prefix: string;
+  line: string;
+  fill: string;
+}
+
+const SOCIAL_PLATFORMS: SocialPlatform[] = [
+  {
+    id: "instagram",
+    label: "Instagram",
+    base: "https://instagram.com/",
+    prefix: "instagram.com/",
+    line: "ri-instagram-line",
+    fill: "ri-instagram-fill",
+  },
+  {
+    id: "facebook",
+    label: "Facebook",
+    base: "https://facebook.com/",
+    prefix: "facebook.com/",
+    line: "ri-facebook-circle-line",
+    fill: "ri-facebook-circle-fill",
+  },
+  {
+    id: "x",
+    label: "X",
+    base: "https://x.com/",
+    prefix: "x.com/",
+    line: "ri-twitter-x-line",
+    fill: "ri-twitter-x-fill",
+  },
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    base: "https://linkedin.com/in/",
+    prefix: "linkedin.com/in/",
+    line: "ri-linkedin-box-line",
+    fill: "ri-linkedin-box-fill",
+  },
+  {
+    id: "youtube",
+    label: "YouTube",
+    base: "https://youtube.com/@",
+    prefix: "youtube.com/@",
+    line: "ri-youtube-line",
+    fill: "ri-youtube-fill",
+  },
+  {
+    id: "tiktok",
+    label: "TikTok",
+    base: "https://tiktok.com/@",
+    prefix: "tiktok.com/@",
+    line: "ri-tiktok-line",
+    fill: "ri-tiktok-fill",
+  },
+  {
+    id: "whatsapp",
+    label: "WhatsApp",
+    base: "https://wa.me/",
+    prefix: "wa.me/",
+    line: "ri-whatsapp-line",
+    fill: "ri-whatsapp-fill",
+  },
+  {
+    id: "telegram",
+    label: "Telegram",
+    base: "https://t.me/",
+    prefix: "t.me/",
+    line: "ri-telegram-line",
+    fill: "ri-telegram-fill",
+  },
+  {
+    id: "snapchat",
+    label: "Snapchat",
+    base: "https://snapchat.com/add/",
+    prefix: "snapchat.com/add/",
+    line: "ri-snapchat-line",
+    fill: "ri-snapchat-fill",
+  },
+  {
+    id: "github",
+    label: "GitHub",
+    base: "https://github.com/",
+    prefix: "github.com/",
+    line: "ri-github-line",
+    fill: "ri-github-fill",
+  },
+  {
+    id: "pinterest",
+    label: "Pinterest",
+    base: "https://pinterest.com/",
+    prefix: "pinterest.com/",
+    line: "ri-pinterest-line",
+    fill: "ri-pinterest-fill",
+  },
+  {
+    id: "threads",
+    label: "Threads",
+    base: "https://threads.com/@",
+    prefix: "threads.com/@",
+    line: "ri-threads-line",
+    fill: "ri-threads-fill",
+  },
+];
+
+function getSocialPlatform(id: SocialPlatformId): SocialPlatform {
+  return SOCIAL_PLATFORMS.find((p) => p.id === id) ?? SOCIAL_PLATFORMS[0];
+}
+
+/** Builds the profile link. A pasted http(s) link is used as-is. */
+function buildSocialURL(platform: SocialPlatformId, raw: string): string {
+  const value = raw.trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+
+  const meta = getSocialPlatform(platform);
+
+  if (platform === "whatsapp") {
+    const digits = value.replace(/\D/g, "");
+    return digits ? `${meta.base}${digits}` : "";
+  }
+
+  const handle = value.replace(/^@+/, "");
+  return handle ? `${meta.base}${encodeURIComponent(handle)}` : "";
+}
+
+/** Returns an error message, or an empty string when the input is fine. */
+function socialError(platform: SocialPlatformId, raw: string): string {
+  const value = raw.trim();
+  if (!value) return "";
+
+  if (/^https?:\/\//i.test(value)) {
+    return isValidURL(value) ? "" : "That link doesn’t look right.";
+  }
+
+  if (platform === "whatsapp") {
+    const digits = value.replace(/\D/g, "");
+    return digits.length >= 7 && digits.length <= 15
+      ? ""
+      : "Enter the full number with country code, 7 to 15 digits.";
+  }
+
+  return /^[\p{L}\p{N}._-]{1,60}$/u.test(value.replace(/^@+/, ""))
+    ? ""
+    : "Use letters, numbers, dots, dashes or underscores only.";
+}
+
+/* ------------------------------------------------------------------ */
 /* Helpers                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -207,6 +389,8 @@ function emptyFields(): QRFields {
     ssid: "",
     password: "",
     security: "WPA",
+    socialPlatform: "instagram",
+    socialHandle: "",
   };
 }
 
@@ -244,6 +428,10 @@ function buildQRData(type: QRType, fields: QRFields): string {
         fields.password,
       )};;`;
     }
+    case "Social":
+      return socialError(fields.socialPlatform, fields.socialHandle)
+        ? ""
+        : buildSocialURL(fields.socialPlatform, fields.socialHandle);
     default:
       return "";
   }
@@ -274,6 +462,7 @@ type IconName =
   | "mail"
   | "phone"
   | "wifi"
+  | "share"
   | "check"
   | "download"
   | "copy"
@@ -296,6 +485,7 @@ const ICONS: Record<IconName, string> = {
   mail: "ri-mail-line",
   phone: "ri-phone-line",
   wifi: "ri-wifi-line",
+  share: "ri-share-forward-line",
   check: "ri-check-line",
   download: "ri-download-2-line",
   copy: "ri-file-copy-line",
@@ -567,7 +757,7 @@ function TypeTabs({
       role="tablist"
       aria-label="QR code type"
       onKeyDown={onKeyDown}
-      className="grid grid-cols-5 border-b border-[#E3DED1]"
+      className="flex overflow-x-auto border-b border-[#E3DED1] [scrollbar-width:none] sm:grid sm:grid-cols-6 [&::-webkit-scrollbar]:hidden"
     >
       {QR_TYPES.map((item) => {
         const active = value === item.id;
@@ -581,7 +771,7 @@ function TypeTabs({
             aria-controls="content-panel"
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(item.id)}
-            className={`relative flex cursor-pointer flex-col items-center justify-center gap-1 px-1 py-3 text-[13px] font-medium transition-colors first:rounded-tl-xl last:rounded-tr-xl sm:flex-row sm:gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#1F2A56] ${
+            className={`relative flex min-w-[76px] flex-1 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 px-2 py-3 sm:min-w-0 sm:px-1 text-[13px] font-medium transition-colors first:rounded-tl-xl last:rounded-tr-xl sm:flex-row sm:gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#1F2A56] ${
               active
                 ? "text-[#1F2A56] after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-[#1F2A56]"
                 : "text-[#77736A] hover:bg-[#FAF8F3] hover:text-[#1B1A17]"
@@ -732,6 +922,101 @@ function EmailForm({
           className="resize-none"
         />
       </FormField>
+    </>
+  );
+}
+
+function SocialForm({
+  fields,
+  onChange,
+}: {
+  fields: QRFields;
+  onChange: (fields: QRFields) => void;
+}) {
+  const platform = getSocialPlatform(fields.socialPlatform);
+  const isWhatsApp = platform.id === "whatsapp";
+  const error = socialError(platform.id, fields.socialHandle);
+  const link = buildSocialURL(platform.id, fields.socialHandle);
+
+  return (
+    <>
+      <div className="mb-4">
+        <span
+          id="social-platform-label"
+          className="mb-1.5 block text-[13px] font-medium text-[#1B1A17]"
+        >
+          Platform
+        </span>
+
+        <div
+          role="group"
+          aria-labelledby="social-platform-label"
+          className="grid grid-cols-3 gap-2 sm:grid-cols-4"
+        >
+          {SOCIAL_PLATFORMS.map((item) => {
+            const active = item.id === platform.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onChange({ ...fields, socialPlatform: item.id })}
+                className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border px-1 py-3 text-xs font-medium transition-colors ${FOCUS} ${
+                  active
+                    ? "border-[#1F2A56] bg-[#EEF0F8] text-[#1F2A56]"
+                    : "border-[#E3DED1] bg-white text-[#4A4740] hover:border-[#A9A292] hover:bg-[#FAF8F3]"
+                }`}
+              >
+                <i
+                  aria-hidden="true"
+                  className={`${active ? item.fill : item.line} inline-block leading-none`}
+                  style={{ fontSize: 22 }}
+                />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <FormField
+        label={isWhatsApp ? "Phone number" : "Username"}
+        htmlFor="f-social"
+        hint={
+          isWhatsApp
+            ? "Include the country code. Spaces, + and dashes are ignored."
+            : "Without the @. You can also paste the full profile link."
+        }
+        error={error || undefined}
+      >
+        <div className="flex h-10 items-stretch overflow-hidden rounded-lg border border-[#CFC8B8] bg-white transition-colors hover:border-[#A9A292] focus-within:border-[#1F2A56] focus-within:ring-[3px] focus-within:ring-[#1F2A56]/15 has-[[aria-invalid=true]]:border-[#B42318] has-[[aria-invalid=true]]:focus-within:ring-[#B42318]/15">
+          <span className="flex max-w-[45%] items-center truncate border-r border-[#E3DED1] bg-[#FAF8F3] px-3 text-[13px] text-[#77736A]">
+            {platform.prefix}
+          </span>
+          <input
+            id="f-social"
+            type="text"
+            autoFocus
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            inputMode={isWhatsApp ? "tel" : "text"}
+            placeholder={isWhatsApp ? "919876543210" : "yourname"}
+            value={fields.socialHandle}
+            aria-invalid={Boolean(error)}
+            onChange={(e) =>
+              onChange({ ...fields, socialHandle: e.target.value })
+            }
+            className="min-w-0 flex-1 bg-transparent px-3 text-sm text-[#1B1A17] outline-none placeholder:text-[#8A8579]"
+          />
+        </div>
+      </FormField>
+
+      {link && !error && (
+        <p className="mt-3 truncate text-xs text-[#77736A]" title={link}>
+          Opens <span className="text-[#4A4740]">{link}</span>
+        </p>
+      )}
     </>
   );
 }
@@ -924,7 +1209,9 @@ function BrandingControls({
   logoScale,
   logoPlate,
   logoError,
+  logoPreset,
   onLogoFile,
+  onSocialLogo,
   onLogoRemove,
   onLogoScaleChange,
   onLogoPlateChange,
@@ -940,7 +1227,9 @@ function BrandingControls({
   logoScale: number;
   logoPlate: boolean;
   logoError: string;
+  logoPreset: SocialLogoId | null;
   onLogoFile: (file: File) => void;
+  onSocialLogo: (id: SocialLogoId) => void;
   onLogoRemove: () => void;
   onLogoScaleChange: (value: number) => void;
   onLogoPlateChange: (value: boolean) => void;
@@ -1002,6 +1291,48 @@ function BrandingControls({
                 Remove
               </button>
             )}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <span
+            id="social-logo-label"
+            className="mb-2 block text-xs text-[#77736A]"
+          >
+            Or use a social media icon
+          </span>
+
+          <div
+            role="group"
+            aria-labelledby="social-logo-label"
+            className="grid grid-cols-4 gap-2 sm:grid-cols-6"
+          >
+            {SOCIAL_PLATFORMS.map((item) => {
+              const tile = SOCIAL_LOGOS[item.id];
+              const active = logoPreset === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  title={item.label}
+                  aria-label={`Use ${item.label} icon as logo`}
+                  aria-pressed={active}
+                  onClick={() => onSocialLogo(item.id)}
+                  className={`flex aspect-square cursor-pointer items-center justify-center rounded-lg border border-black/10 transition-shadow ${FOCUS} ${
+                    active
+                      ? "ring-2 ring-[#1F2A56] ring-offset-2 ring-offset-white"
+                      : "hover:ring-2 hover:ring-[#CFC8B8] hover:ring-offset-2 hover:ring-offset-white"
+                  }`}
+                  style={{ background: tile.color, color: tile.glyph }}
+                >
+                  <i
+                    aria-hidden="true"
+                    className={`${item.fill} inline-block leading-none`}
+                    style={{ fontSize: 22 }}
+                  />
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -1105,13 +1436,9 @@ function QRPreview({
   aspect: number;
   error: string;
 }) {
-  const [imageError, setImageError] = useState(false);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    setImageError(false);
-  }, [qrUrl]);
-
-  const hasQR = Boolean(qrUrl) && !imageError;
+  const hasQR = Boolean(qrUrl) && failedUrl !== qrUrl;
   const displaySize = Math.min(size, 340);
 
   return (
@@ -1130,7 +1457,7 @@ function QRPreview({
             height={Math.round(displaySize * aspect)}
             className="block h-auto max-w-full"
             style={{ maxWidth: "min(340px, 100%)" }}
-            onError={() => setImageError(true)}
+            onError={() => setFailedUrl(qrUrl)}
           />
         </div>
       ) : (
@@ -1331,6 +1658,7 @@ export default function QRGenerator() {
   const [logoScale, setLogoScale] = useState(22);
   const [logoPlate, setLogoPlate] = useState(true);
   const [logoError, setLogoError] = useState("");
+  const [logoPreset, setLogoPreset] = useState<SocialLogoId | null>(null);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const historyRef = useRef<HistoryItem[]>([]);
@@ -1359,6 +1687,8 @@ export default function QRGenerator() {
     if (type === "URL") return Boolean(fields.url) && !isValidURL(fields.url);
     if (type === "Email")
       return Boolean(fields.email) && !isValidEmail(fields.email);
+    if (type === "Social")
+      return Boolean(socialError(fields.socialPlatform, fields.socialHandle));
     return false;
   }, [type, fields]);
 
@@ -1553,6 +1883,7 @@ export default function QRGenerator() {
     setLogo(item.logo);
     setLogoScale(item.logoScale);
     setLogoPlate(item.logoPlate);
+    setLogoPreset(null);
     setLogoError("");
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1583,11 +1914,26 @@ export default function QRGenerator() {
     try {
       const dataUrl = await readLogo(file);
       setLogo(dataUrl);
+      setLogoPreset(null);
       setLogoError("");
       setEcc("H");
     } catch (error) {
       setLogoError(
         error instanceof Error ? error.message : "Unable to read this image.",
+      );
+    }
+  }, []);
+
+  const handleSocialLogo = useCallback(async (id: SocialLogoId) => {
+    try {
+      const dataUrl = await renderSocialLogo(id);
+      setLogo(dataUrl);
+      setLogoPreset(id);
+      setLogoError("");
+      setEcc("H");
+    } catch (error) {
+      setLogoError(
+        error instanceof Error ? error.message : "Unable to create this logo.",
       );
     }
   }, []);
@@ -1739,6 +2085,9 @@ export default function QRGenerator() {
                 {type === "WiFi" && (
                   <WiFiForm fields={fields} onChange={setFields} />
                 )}
+                {type === "Social" && (
+                  <SocialForm fields={fields} onChange={setFields} />
+                )}
               </div>
             </section>
 
@@ -1779,9 +2128,12 @@ export default function QRGenerator() {
                   logoScale={logoScale}
                   logoPlate={logoPlate}
                   logoError={logoError}
+                  logoPreset={logoPreset}
                   onLogoFile={handleLogoFile}
+                  onSocialLogo={handleSocialLogo}
                   onLogoRemove={() => {
                     setLogo(null);
+                    setLogoPreset(null);
                     setLogoError("");
                   }}
                   onLogoScaleChange={setLogoScale}
